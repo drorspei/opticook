@@ -89,7 +89,7 @@ def Resources(v):
     return {"oven"} if "bake" in v else set([])
 
 
-cc = open("./cheesecake2.txt").readlines()
+cc = open("./recipes/cheesecake2.txt").readlines()
 Vertices, Edges, a = zip(
     *[
         (
@@ -156,18 +156,16 @@ idx2tuple = {idx: tpl for tpl, idx in tuple2idx.items()}
 
 clauses = []
 
-# a single proces p does a single task at a single time t
 print("1/6 process does single high attention task")
 for v, u in tqdm.tqdm(list(product(Vertices, Vertices))):
     for i, j in product(range(len(a[v])), range(len(a[u]))):
-        if u != v or i != j:
+        if (u != v or i != j) and a[v][i].Attention and a[u][j].Attention:
             for t in Times:
                 for s in range(t, min(t + a[v][i].time, Times[-1] + 1)):
-                    if a[v][i][0] and a[v][j][0]:
-                        for p in Proc:
-                            clauses.append(
-                                [-tuple2idx[(p, t, v, i)], -tuple2idx[(p, s, u, j)]]
-                            )
+                    for p in Proc:
+                        clauses.append(
+                            [-tuple2idx[(p, t, v, i)], -tuple2idx[(p, s, u, j)]]
+                        )
 
 print("2/6 resource can do one thing at a time")
 for (v, rv), (u, ru) in tqdm.tqdm(
