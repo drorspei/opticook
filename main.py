@@ -2,7 +2,7 @@ import tqdm
 from subprocess import check_call
 #!/usr/bin/env python
 # coding: utf-8
-# test1
+# test2
 from collections import namedtuple
 from pycryptosat import Solver
 from itertools import product
