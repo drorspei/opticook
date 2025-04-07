@@ -143,87 +143,134 @@ a = {
 # print(a)
 # exit(0)
 
-tuples = []
-for p in Proc:
-    for v in Vertices:
-        for i in range(len(a[v])):
-            for t in Times:
-                tuples.append((p, t, v, i))
+def recipe2sat(Proc,Vertices,Times,Edges,a):
+'''transform a cooking data plus time suggestion into a SAT problem'''
+    tuples = []
+    for p in Proc:
+        for v in Vertices:
+            for i in range(len(a[v])):
+                for t in Times:
+                    tuples.append((p, t, v, i))
 
-tuple2idx = {tpl: idx for idx, tpl in enumerate(tuples, start=1)}
-idx2tuple = {idx: tpl for tpl, idx in tuple2idx.items()}
+    tuple2idx = {tpl: idx for idx, tpl in enumerate(tuples, start=1)}
+    #idx2tuple = {idx: tpl for tpl, idx in tuple2idx.items()}
 
+    clauses = []
 
-clauses = []
+    print("1/6 process does single high attention task")
+    for v, u in tqdm.tqdm(list(product(Vertices, Vertices))):
+        for i, j in product(range(len(a[v])), range(len(a[u]))):
+            if (u != v or i != j) and a[v][i].Attention and a[u][j].Attention:
+                for t in Times:
+                    for s in range(t, min(t + a[v][i].time, Times[-1] + 1)):
+                        for p in Proc:
+                            clauses.append(
+                                [-tuple2idx[(p, t, v, i)], -tuple2idx[(p, s, u, j)]]
+                            )
 
-print("1/6 process does single high attention task")
-for v, u in tqdm.tqdm(list(product(Vertices, Vertices))):
-    for i, j in product(range(len(a[v])), range(len(a[u]))):
-        if (u != v or i != j) and a[v][i].Attention and a[u][j].Attention:
-            for t in Times:
+    print("2/6 resource can do one thing at a time")
+    for (v, rv), (u, ru) in tqdm.tqdm(
+        list(product([(v, rv) for v in Vertices if (rv := Resources(v))], repeat=2))
+    ):
+        if v != u and ru & rv:
+            for p1, p2, t, i, j in product(
+                Proc, Proc, Times, range(len(a[v])), range(len(a[u]))
+            ):
                 for s in range(t, min(t + a[v][i].time, Times[-1] + 1)):
-                    for p in Proc:
+                    clauses.append([-tuple2idx[p1, t, v, i], -tuple2idx[p2, s, u, j]])
+
+    print("3/6 every vertex is done at least once")
+    for v in tqdm.tqdm(Vertices):
+        for i in range(len(a[v])):
+            cls = []
+            for p in Proc:
+                for t in Times:
+                    cls.append(tuple2idx[(p, t, v, i)])
+            clauses.append(cls)
+
+
+    print("4/6 every task is done at most once")
+    for p, q in tqdm.tqdm(list(product(Proc, Proc))):
+        for t, s in product(Times, Times):
+            if p != q or t != s:
+                for v in Vertices:
+                    for i in range(len(a[v])):
+                        clauses.append([-tuple2idx[(p, t, v, i)], -tuple2idx[(q, s, v, i)]])
+
+    print("5/6 the task are executed serially")
+    for v in tqdm.tqdm(Vertices):
+        for i in range(len(a[v]) - 1):
+            for p, q in product(Proc, Proc):
+                for t, s in product(Times, Times):
+                    if s < t + a[v][i].time:
                         clauses.append(
-                            [-tuple2idx[(p, t, v, i)], -tuple2idx[(p, s, u, j)]]
+                            [-tuple2idx[(p, t, v, i)], -tuple2idx[(q, s, v, i + 1)]]
                         )
 
-print("2/6 resource can do one thing at a time")
-for (v, rv), (u, ru) in tqdm.tqdm(
-    list(product([(v, rv) for v in Vertices if (rv := Resources(v))], repeat=2))
-):
-    if v != u and ru & rv:
-        for p1, p2, t, i, j in product(
-            Proc, Proc, Times, range(len(a[v])), range(len(a[u]))
-        ):
-            for s in range(t, min(t + a[v][i].time, Times[-1] + 1)):
-                clauses.append([-tuple2idx[p1, t, v, i], -tuple2idx[p2, s, u, j]])
 
-print("3/6 every vertex is done at least once")
-for v in tqdm.tqdm(Vertices):
-    for i in range(len(a[v])):
-        cls = []
-        for p in Proc:
-            for t in Times:
-                cls.append(tuple2idx[(p, t, v, i)])
-        clauses.append(cls)
-
-
-print("4/6 every task is done at most once")
-for p, q in tqdm.tqdm(list(product(Proc, Proc))):
-    for t, s in product(Times, Times):
-        if p != q or t != s:
-            for v in Vertices:
-                for i in range(len(a[v])):
-                    clauses.append([-tuple2idx[(p, t, v, i)], -tuple2idx[(q, s, v, i)]])
-
-print("5/6 the task are executed serially")
-for v in tqdm.tqdm(Vertices):
-    for i in range(len(a[v]) - 1):
-        for p, q in product(Proc, Proc):
-            for t, s in product(Times, Times):
-                if s < t + a[v][i].time:
+    print("6/6 the task execution follows the graph structure")
+    for v, u in tqdm.tqdm(Edges):
+        for t, s in product(Times, Times):
+            if s < t + a[v][len(a[v]) - 1].time:
+                for p, q in product(Proc, Proc):
                     clauses.append(
-                        [-tuple2idx[(p, t, v, i)], -tuple2idx[(q, s, v, i + 1)]]
+                        [-tuple2idx[(p, t, v, len(a[v]) - 1)], -tuple2idx[(q, s, u, 0)]]
                     )
+    return clauses, tuples, tuple2idx
 
 
-print("6/6 the task execution follows the graph structure")
-for v, u in tqdm.tqdm(Edges):
-    for t, s in product(Times, Times):
-        if s < t + a[v][len(a[v]) - 1].time:
-            for p, q in product(Proc, Proc):
-                clauses.append(
-                    [-tuple2idx[(p, t, v, len(a[v]) - 1)], -tuple2idx[(q, s, u, 0)]]
-                )
+def sat2IDX(clauses, tuple2idx):
+    '''Setup a SAT cryptosolver to solve the SAT cooking clauses, If a solution is found, returns the resulting cooking instructions as a list, if a solution is not found, return False'''
+    s = Solver()
+    for cls in tqdm.tqdm(clauses):
+        s.add_clause(cls)
+    sat, solution = s.solve()
+    
+    if sat:
+        idx2tuple = {idx: tpl for tpl, idx in tuple2idx.items()}
+        IDX = [idx2tuple[i] for i, s in enumerate(solution) if s]
+        return IDX
+        #print(            "\n".join(f"{p} {t / (60 // unit):.1f} '{v}'.{i}" for p, t, v, i in sorted(IDX)))
+    else:
+        return False
+    
+    
+def binarysearch(f,lb,ub):
+    """the function search for an minimal input x between lb and ub for which f returns the value True"""
+    while lb < ub:
+        mid = (lb + ub) // 2
+        if f(mid):
+            ub = mid
+        else: 
+            lb = mid + 1
+    return lb
 
-s = Solver()
-for cls in tqdm.tqdm(clauses):
-    s.add_clause(cls)
-sat, solution = s.solve()
 
-if sat:
-    IDX = [idx2tuple[i] for i, s in enumerate(solution) if s]
+def run_with_timeout(f, args, timeout, default=None):
+    ctx = multiprocessing.get_context('fork')
+    q = ctx.Queue()
+    def ff(f, args, q):
+        ret = f(*args)
+        q.put(ret)
+        
+    p = ctx.Process(target=ff, args=(f, args, q))
+    p.start()
+    try:
+        ret = q.get(timeout=timeout)
+    except queue.Empty:
+        p.kill()
+        return default
+    p.join()
+    return ret
 
-    print(
-        "\n".join(f"{p} {t / (60 // unit):.1f} '{v}'.{i}" for p, t, v, i in sorted(IDX))
-    )
+
+def time_per_task(assignment):
+    if assignment.Attention:
+        return assignment.time
+    else:
+        return 0
+    
+def time_upperbound(a):
+    return sum(list(map(lambda x: time_per_task(x[0]), list(a.values()))))
+    
+
