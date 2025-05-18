@@ -1,0 +1,30 @@
+[
+  {
+    "id":           0,
+    "name":       "Preheat oven to 180 °C",
+    "duration":    300,
+    "assignedTo": ["A"],
+    "dependencies":[]
+  },
+  {
+    "id":           1,
+    "name":       "Chop vegetables",
+    "duration":    120,
+    "assignedTo": ["A"],
+    "dependencies":[0]
+  },
+  {
+    "id":           2,
+    "name":       "Boil water",
+    "duration":    180,
+    "assignedTo": ["B"],
+    "dependencies":[0]
+  },
+  {
+    "id":           3,
+    "name":       "Grate cheese",
+    "duration":     60,
+    "assignedTo": ["B"],
+    "dependencies":[1,2]
+  }
+]
