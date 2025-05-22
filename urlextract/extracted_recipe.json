@@ -1,0 +1,263 @@
+{
+  "@type": "Recipe",
+  "name": "Homemade Bolognese Sauce",
+  "author": {
+    "@id": "https://www.spendwithpennies.com/#/schema/person/1212dd6ee15c360b58032f7b23d46110"
+  },
+  "description": "Bolognese is a rich, meaty tomato sauce made with ground beef and pork. It&#39;s simmered with a splash of wine and seasonings to create a restaurant worthy pasta bolognese at home!",
+  "datePublished": "2025-01-15T18:13:56+00:00",
+  "image": [
+    "https://www.spendwithpennies.com/wp-content/uploads/2020/05/Homemade-Bolognese-Sauce-SpendWithPennies-12.jpg",
+    "https://www.spendwithpennies.com/wp-content/uploads/2020/05/Homemade-Bolognese-Sauce-SpendWithPennies-12-500x500.jpg",
+    "https://www.spendwithpennies.com/wp-content/uploads/2020/05/Homemade-Bolognese-Sauce-SpendWithPennies-12-500x375.jpg",
+    "https://www.spendwithpennies.com/wp-content/uploads/2020/05/Homemade-Bolognese-Sauce-SpendWithPennies-12-480x270.jpg"
+  ],
+  "video": {
+    "name": "Homemade Bolognese Sauce",
+    "description": "Bolognese Sauce is a pasta staple and a family pleasing recipe! A rich tomato based meat sauce with beef and pork is combined with onions, garlic, and veggies for an Italian favorite.",
+    "thumbnailUrl": "https://content.jwplatform.com/thumbs/kKC8qkh7-720.jpg",
+    "contentUrl": "https://content.jwplatform.com/videos/kKC8qkh7.mp4",
+    "uploadDate": "2020-03-15T15:26:43.000Z",
+    "@type": "VideoObject"
+  },
+  "recipeYield": [
+    "6",
+    "6 servings"
+  ],
+  "prepTime": "PT20M",
+  "cookTime": "PT60M",
+  "totalTime": "PT80M",
+  "recipeIngredient": [
+    "2 tablespoons olive oil",
+    "1  yellow onion (finely diced)",
+    "4 cloves garlic  (crushed)",
+    "1  carrot (finely diced)",
+    "1 rib celery (finely diced)",
+    "1 pound lean ground beef",
+    "½ pound lean ground pork",
+    "1 ¼ cups red wine (or beef broth)",
+    "1 cup whole milk",
+    "1 can whole tomatoes (with juices, 28 ounces each)",
+    "4 tablespoons tomato paste",
+    "1 teaspoon Italian seasoning",
+    "1  bay leaf",
+    "½ teaspoon salt (more to taste)",
+    "¼ teaspoon black pepper",
+    "pappardelle (or long pasta, for serving)"
+  ],
+  "recipeInstructions": [
+    {
+      "@type": "HowToStep",
+      "text": "In a large pot, cook onion in oil over medium heat until softened, about 3 to 4 minutes.",
+      "name": "In a large pot, cook onion in oil over medium heat until softened, about 3 to 4 minutes.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-0"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Add garlic, carrot, and celery, and cook until softened, about 5 minutes.",
+      "name": "Add garlic, carrot, and celery, and cook until softened, about 5 minutes.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-1"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Add beef and pork. Break it up with a wooden spoon, until no pink remains. Drain fat.",
+      "name": "Add beef and pork. Break it up with a wooden spoon, until no pink remains. Drain fat.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-2"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Add the wine and simmer uncovered until evaporated, about 10 minutes. Add milk and simmer uncovered until evaporated, about 8 minutes.",
+      "name": "Add the wine and simmer uncovered until evaporated, about 10 minutes. Add milk and simmer uncovered until evaporated, about 8 minutes.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-3"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Stir in tomatoes with juice, tomato paste, Italian seasoning, and bay leaf. Break tomatoes up with a spoon. Cover and simmer for 30 minutes or until thickened. Season with salt &amp; pepper to taste.",
+      "name": "Stir in tomatoes with juice, tomato paste, Italian seasoning, and bay leaf. Break tomatoes up with a spoon. Cover and simmer for 30 minutes or until thickened. Season with salt &amp; pepper to taste.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-4"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Cook pasta according to package directions. Reserve 1 ½ cups of pasta water and drain the pasta well.",
+      "name": "Cook pasta according to package directions. Reserve 1 ½ cups of pasta water and drain the pasta well.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-5"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Toss pasta with sauce, adding pasta water to thin it out if needed.",
+      "name": "Toss pasta with sauce, adding pasta water to thin it out if needed.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-6"
+    },
+    {
+      "@type": "HowToStep",
+      "text": "Serve hot with parmesan cheese.",
+      "name": "Serve hot with parmesan cheese.",
+      "url": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#wprm-recipe-165788-step-0-7"
+    }
+  ],
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": "4.96",
+    "ratingCount": "681",
+    "reviewCount": "10"
+  },
+  "review": [
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "pea milk is vegan and AMAZING in creamy sauces and risotto!",
+      "author": {
+        "@type": "Person",
+        "name": "Tiffany"
+      },
+      "datePublished": "2025-05-19"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "My husband spent all afternoon yesterday making this sauce. It was well worth it. He also made pasta from scratch to go with it..YUM!  The yield on the recipe says 6 servings and the nutritional info says 359 per serving..what size serving is that based on. We ended up with at least 8 servings and maybe more. What do you consider a serving? 1/4 cup, 1/2 cup?  Thanks.",
+      "author": {
+        "@type": "Person",
+        "name": "Sharon DiPiazza"
+      },
+      "datePublished": "2025-05-18"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "I will be following this recipe again! my first attempt and with a little extra time and simmer, this bolognese cane out great! merlot wine was my choice. fresh rosemary and oregano for a twist.",
+      "author": {
+        "@type": "Person",
+        "name": "Sdeynce"
+      },
+      "datePublished": "2025-05-17"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "This recipe is amazing so blessed to have the internet",
+      "author": {
+        "@type": "Person",
+        "name": "Star"
+      },
+      "datePublished": "2025-05-13"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "This is the best!!  My husband is Italian and this is his favorite meal I make for him. Thank you!",
+      "author": {
+        "@type": "Person",
+        "name": "Melissa Dean"
+      },
+      "datePublished": "2025-05-05"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "Tried making this for dinner last night! And man, this is so good! I didn’t have any bay leafs on me but it still tasted good!!! Probably one of the best bolognese pasta I have tried! Will make it more next time for friends and Family!!",
+      "author": {
+        "@type": "Person",
+        "name": "Addy B"
+      },
+      "datePublished": "2025-04-25"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "My first bolognese! Thank you for the recipe. I didn’t have canned whole tomatoes and had to use sauce instead but still came out very good. Just froze the leftovers for a future easy weeknight meal.",
+      "author": {
+        "@type": "Person",
+        "name": "Susan Cronin"
+      },
+      "datePublished": "2025-04-12"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "I never leave reviews but I felt wrong not doing so after making this once a week for the last 6 months. This is my favorite bolognese ever and I’m Italian. Thank you!",
+      "author": {
+        "@type": "Person",
+        "name": "A C"
+      },
+      "datePublished": "2025-03-29"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "5"
+      },
+      "reviewBody": "Excellent, easy to make recipe! I have made it multiple times :) You can add your own spices for extra flavours.",
+      "author": {
+        "@type": "Person",
+        "name": "Genevieve"
+      },
+      "datePublished": "2025-03-26"
+    },
+    {
+      "@type": "Review",
+      "reviewRating": {
+        "@type": "Rating",
+        "ratingValue": "4"
+      },
+      "reviewBody": "It was good. Easy directions. And I added an extra carrot and celery with a few mushrooms stems. my household enjoyed it, but they prefer homemade spaghetti. I however, loved the wine accents and veggies.",
+      "author": {
+        "@type": "Person",
+        "name": "Samantha"
+      },
+      "datePublished": "2025-03-02"
+    }
+  ],
+  "recipeCategory": [
+    "Pasta",
+    "Sauce"
+  ],
+  "recipeCuisine": [
+    "American",
+    "Italian"
+  ],
+  "keywords": "best recipe, bolognese, bolognese sauce, how to make",
+  "nutrition": {
+    "@type": "NutritionInformation",
+    "calories": "359 kcal",
+    "carbohydrateContent": "14 g",
+    "proteinContent": "26 g",
+    "fatContent": "18 g",
+    "saturatedFatContent": "6 g",
+    "cholesterolContent": "78 mg",
+    "sodiumContent": "571 mg",
+    "fiberContent": "3 g",
+    "sugarContent": "8 g",
+    "servingSize": "1 serving"
+  },
+  "@id": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#recipe",
+  "isPartOf": {
+    "@id": "https://www.spendwithpennies.com/homemade-bolognese-sauce/#article"
+  },
+  "mainEntityOfPage": "https://www.spendwithpennies.com/homemade-bolognese-sauce/"
+}
