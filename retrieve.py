@@ -58,6 +58,9 @@ def ask_chatgpt_for_structured_steps(recipe, model="gpt-4o"):
         {"role": "system", "content": "You are an expert chef and helpful kitchen assistant."},
         {"role": "user", "content": prompt}
     ]
+
+    # we need to move to using "tools", so the return value should be a JSON array with the same structure every time
+    # this means passing a "schema"
     response = litellm.completion(
         model=model,
         messages=messages,
