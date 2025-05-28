@@ -6,9 +6,12 @@ We talk to sites in HTTP 1/2/3 (or later?)
 Calling a page means sending over a tcp/ip socket something like this:
 
 Abstract data:
-  - Instructions are List[Tuple[chef, description, time]]
+  - Task is (description, duration, attention, dependencies)
+  - Instructions is (task, chef)
   - A session is a list of done tasks, a list of unstarted tasks and their compilation to Instructions, which is a list of lists of items, and a list of pairs (cook,current task or null)
   - A chef is a name (later we might put in other stuff)
+
+  A session is a "recipe" - list of ([number,] description, duration, attention, dependencies), list of done indices, current assignments Dict[chef, int], list of unstarted items Dict[chef, List[int]]
 
 Computations:
   - Next instruction ( (session, chef) -> session ) - move current task to done tasks, and move an unstarted task to the current task of the chef
