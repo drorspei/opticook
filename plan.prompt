@@ -56,7 +56,7 @@ Once the recipe is sent, the user is asked to enter names of the participant che
 Below the "Add another chef" there is a button "Start cooking!".
 Once clicked, a cooking session begins!
 The screen is divided into sections, a section per chef.
-Each chef's section has two parts. The top part shows the name of the chef's current active task (e.g., "chop carrots"), and below it a button that says "done", that if clicked progresses them to their next task. The bottom part shows a running down timer for each of the chef's passive tasks (e.g., "eggs are boiling") and a botton "Dismiss task" beneath it. The timmer lights and beeps when reaching zero and dissapears only when dismissed by the chef. 
+Each chef's section has two parts. The top part shows the name of the chef's current active task (e.g., "chop carrots"), and below it a button that says "done", that if clicked progresses them to their next task. The bottom part shows a running down timer for each of the chef's passive tasks (e.g., "eggs are boiling") and a botton "Dismiss task" beneath it. The  timmer lights and beeps when reaching zero and dissapears only when dismissed by the chef. 
 
 
 **Data Handling**
