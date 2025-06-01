@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "cooking-collab"
+version = "0.1.0"
+description = "A collaborative cooking project."
+authors = ["Your Name <you@example.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.110"
+uvicorn = {extras = ["standard"], version = "*"}
+jinja2 = "*"
+
+[tool.poetry.dev-dependencies]
+black = "*"
+ruff = "*"
+pre-commit = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
