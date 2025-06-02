@@ -280,6 +280,8 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi import Request, Form
 from fastapi.responses import RedirectResponse
+from fastapi import Form
+from session_manager import allocate_tasks
 from session_manager import session_manager
 from cooking.recipe_parser import parse_cooking_instructions
 
@@ -307,4 +309,19 @@ async def submit_recipe(recipe_text: str = Form(...)):
     session = session_manager.get_session()
     session.recipe = parse_cooking_instructions(recipe_text)
     return RedirectResponse(url="/chefs", status_code=303)
-templates = Jinja2Templates(directory="templates")
+@app.get("/chefs")
+async def get_chefs(request: Request):
+    """
+    Render a form to enter chef names.
+    """
+    return templates.TemplateResponse("chefs.html", {"request": request})
+
+@app.post("/chefs")
+async def post_chefs(chef_names: str = Form(...)):
+    """
+    Receive chef names from a form, save them in the session, allocate tasks, and redirect to /cook.
+    """
+    session = session_manager.get_session()
+    session.chefs = [name.strip() for name in chef_names.split(",")]
+    allocate_tasks(session)
+    return RedirectResponse(url="/cook", status_code=303)
