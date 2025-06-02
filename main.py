@@ -280,7 +280,7 @@ from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
 from fastapi import Request, Form
 from fastapi.responses import RedirectResponse
-from fastapi import Form
+from fastapi import Form, Path
 from session_manager import allocate_tasks
 from session_manager import session_manager
 from cooking.recipe_parser import parse_cooking_instructions
@@ -327,4 +327,34 @@ async def post_chefs(chef_names: str = Form(...)):
     session = session_manager.get_session()
     session.chefs = [name.strip() for name in chef_names.split(",")]
     allocate_tasks(session)
+    return RedirectResponse(url="/cook", status_code=303)
+
+@app.get("/cook")
+async def get_cook(request: Request):
+    """
+    Render the cook.html dashboard with the current session.
+    """
+    session = session_manager.get_session()
+    return templates.TemplateResponse("cook.html", {"request": request, "session": session})
+
+@app.post("/chef/{name}/done")
+async def post_chef_done(name: str = Path(...)):
+    """
+    Mark the current task for the specified chef as done and redirect back to /cook.
+    """
+    session = session_manager.get_session()
+    chef = next((c for c in session.chefs if c.name == name), None)
+    if chef and chef.attention_tasks:
+        chef.attention_tasks.pop(0)  # Remove the first task as done
+    return RedirectResponse(url="/cook", status_code=303)
+
+@app.post("/chef/{name}/dismiss/{idx}")
+async def post_chef_dismiss(name: str = Path(...), idx: int = Path(...)):
+    """
+    Dismiss a passive task for the specified chef and redirect back to /cook.
+    """
+    session = session_manager.get_session()
+    chef = next((c for c in session.chefs if c.name == name), None)
+    if chef and 0 <= idx < len(chef.passive_tasks):
+        chef.passive_tasks.pop(idx)  # Remove the task at the specified index
     return RedirectResponse(url="/cook", status_code=303)
