@@ -143,8 +143,8 @@ a = {
 # print(a)
 # exit(0)
 
-def recipe2sat(Proc,Vertices,Times,Edges,a):
-'''transform a cooking data plus time suggestion into a SAT problem'''
+def recipe2sat(Proc, Vertices, Times, Edges, a):
+    '''transform a cooking data plus time suggestion into a SAT problem'''
     tuples = []
     for p in Proc:
         for v in Vertices:
