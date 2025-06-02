@@ -8,3 +8,5 @@ __pycache__/
 
 # VS Code
 .vscode/
+.aider*
+.env
