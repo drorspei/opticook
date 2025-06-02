@@ -1,3 +1,5 @@
+import multiprocessing
+import queue
 import tqdm
 from subprocess import check_call
 #!/usr/bin/env python
