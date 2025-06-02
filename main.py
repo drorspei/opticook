@@ -287,6 +287,9 @@ from cooking.recipe_parser import parse_cooking_instructions
 
 app = FastAPI()
 
+# Mount Jinja2Templates for rendering templates
+templates = Jinja2Templates(directory="templates")
+
 @app.on_event("startup")
 async def startup_event():
     """
