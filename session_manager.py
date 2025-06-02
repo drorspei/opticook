@@ -33,3 +33,25 @@ class SessionManager:
 
 # Create a global instance of SessionManager
 session_manager = SessionManager()
+
+def allocate_tasks(session: Session) -> None:
+    """
+    Allocate tasks to chefs in the session. Attention tasks are assigned
+    round-robin, while passive tasks are added to each chef's passive list.
+
+    Args:
+        session (Session): The session containing the recipe and chefs.
+    """
+    chefs = session.chefs
+    num_chefs = len(chefs)
+    attention_index = 0
+
+    for task in session.recipe.tasks:
+        if task.attention:
+            # Assign attention tasks round-robin
+            chefs[attention_index % num_chefs].attention_tasks.append(task)
+            attention_index += 1
+        else:
+            # Add passive tasks to every chef's passive list
+            for chef in chefs:
+                chef.passive_tasks.append(task)
