@@ -278,7 +278,10 @@ def time_upperbound(a):
 
 from fastapi import FastAPI
 from fastapi.templating import Jinja2Templates
+from fastapi import Request, Form
+from fastapi.responses import RedirectResponse
 from session_manager import session_manager
+from cooking.recipe_parser import parse_cooking_instructions
 
 app = FastAPI()
 
@@ -289,5 +292,19 @@ async def startup_event():
     """
     session = session_manager.get_session()
 
-# Mount Jinja2Templates for rendering templates
+@app.get("/")
+async def read_root(request: Request):
+    """
+    Render the index.html template with an empty textarea.
+    """
+    return templates.TemplateResponse("index.html", {"request": request, "textarea_content": ""})
+
+@app.post("/recipe")
+async def submit_recipe(recipe_text: str = Form(...)):
+    """
+    Receive recipe text from a form, parse it, store it in the session, and redirect to /chefs.
+    """
+    session = session_manager.get_session()
+    session.recipe = parse_cooking_instructions(recipe_text)
+    return RedirectResponse(url="/chefs", status_code=303)
 templates = Jinja2Templates(directory="templates")
