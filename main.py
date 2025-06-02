@@ -274,3 +274,18 @@ def time_upperbound(a):
     return sum(list(map(lambda x: time_per_task(x[0]), list(a.values()))))
     
 
+from fastapi import FastAPI
+from fastapi.templating import Jinja2Templates
+from session_manager import session_manager
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Event handler for application startup. Loads the session using SessionManager.
+    """
+    session = session_manager.get_session()
+
+# Mount Jinja2Templates for rendering templates
+templates = Jinja2Templates(directory="templates")
