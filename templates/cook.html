@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Cooking Dashboard</h1>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for chef in session.chefs %}
+    <div class="bg-white p-4 rounded shadow">
+        <h2 class="text-xl font-semibold mb-2">{{ chef.name }}</h2>
+        <div class="mb-4">
+            <h3 class="font-bold">Active Task:</h3>
+            {% if chef.attention_tasks %}
+            <p>{{ chef.attention_tasks[0].name }}</p>
+            <form action="/chef/{{ chef.name }}/done" method="post">
+                <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Done</button>
+            </form>
+            {% else %}
+            <p>No active tasks</p>
+            {% endif %}
+        </div>
+        <div>
+            <h3 class="font-bold">Passive Tasks:</h3>
+            <ul>
+                {% for idx, task in enumerate(chef.passive_tasks) %}
+                <li>
+                    <span>{{ task.name }} - <span id="timer-{{ chef.name }}-{{ idx }}">{{ task.time }}</span> seconds</span>
+                    <form action="/chef/{{ chef.name }}/dismiss/{{ idx }}" method="post" style="display:inline;">
+                        <button type="submit" class="bg-red-500 text-white px-2 py-1 rounded">Dismiss</button>
+                    </form>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+    function tickTimers() {
+        document.querySelectorAll('[id^="timer-"]').forEach(timer => {
+            let time = parseInt(timer.textContent);
+            if (time > 0) {
+                timer.textContent = time - 1;
+            } else if (time === 0) {
+                new Audio('/static/beep.mp3').play();
+                timer.textContent = "Time's up!";
+            }
+        });
+    }
+
+    setInterval(tickTimers, 1000);
+</script>
+{% endblock %}
