@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-4">Enter Chef Names</h1>
+<form action="/chefs" method="post" id="chefForm">
+    <div id="chefInputs">
+        <input type="text" name="chef_names" class="w-full p-2 border border-gray-300 rounded mb-2" placeholder="Chef Name">
+    </div>
+    <button type="button" id="addChefBtn" class="bg-green-500 text-white px-4 py-2 rounded mb-4">Add Chef</button>
+    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Start cooking!</button>
+</form>
+
+<script>
+    document.getElementById('addChefBtn').addEventListener('click', function() {
+        const chefInputs = document.getElementById('chefInputs');
+        const inputCount = chefInputs.getElementsByTagName('input').length;
+        if (inputCount < 4) {
+            const newInput = document.createElement('input');
+            newInput.type = 'text';
+            newInput.name = 'chef_names';
+            newInput.className = 'w-full p-2 border border-gray-300 rounded mb-2';
+            newInput.placeholder = 'Chef Name';
+            chefInputs.appendChild(newInput);
+        }
+    });
+</script>
+{% endblock %}
