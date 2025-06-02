@@ -22,7 +22,8 @@ class SessionManager:
             Session: The current session instance.
         """
         if self._session is None:
-            self._session = Session()
+            # Assuming default values for recipe and chef_tasks
+            self._session = Session(recipe=[], chef_tasks=[])
         return self._session
 
     def reset_session(self) -> None:
