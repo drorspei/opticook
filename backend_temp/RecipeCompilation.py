@@ -5,7 +5,6 @@
 
 
 ## SAT stuff ##
-import RecipeCompilation
 import tqdm
 from subprocess import check_call
 #!/usr/bin/env python
@@ -14,9 +13,14 @@ from subprocess import check_call
 from collections import namedtuple
 from pycryptosat import Solver
 from itertools import product
-
+import multiprocessing
+import queue
 cooking_time_unit = 30    # in seconds
 assert 60 % cooking_time_unit == 0
+
+
+#cooking_time_unit = 30    # in seconds
+#assert 60 % cooking_time_unit == 0
 
 Assignment = namedtuple("Assignment", ["attention", "time"])
 
@@ -124,17 +128,6 @@ def satSolve(clauses, tuple2idx):
         #print(            "\n".join(f"{p} {t / (60 // unit):.1f} '{v}'.{i}" for p, t, v, i in sorted(IDX)))
     else:
         return False
-    
-    
-def binarysearch(f,lb,ub):
-    """the function search for an minimal input x between lb and ub for which f returns the value True"""
-    while lb < ub:
-        mid = (lb + ub) // 2
-        if f(mid):
-            ub = mid
-        else: 
-            lb = mid + 1
-    return lb
 
 
 def run_with_timeout(f, args, timeout, default=None):
@@ -154,10 +147,45 @@ def run_with_timeout(f, args, timeout, default=None):
     p.join()
     return ret
 
+    
+def recipe2solve_with_timeout(chefs, vertices, edges,a, time_ub, timeout, time_unit=cooking_time_unit):
+    clauses, tuples, tuple2idx = recipe2sat(chefs, vertices, edges,a, time_ub, time_unit)
+    return run_with_timeout(satSolve, [clauses,tuple2idx], timeout)
 
 
-# In[ ]:
+def F(chefs, vertices, edges, a, timeout):
+    return lambda time_ub: recipe2solve_with_timeout(chefs, vertices, edges,a, time_ub, timeout)
 
 
 
+def recipe2solve_with_timeout(chefs, vertices, edges,a, time_ub, timeout, time_unit=cooking_time_unit):
+    clauses, tuples, tuple2idx = recipe2sat(chefs, vertices, edges,a, time_ub, time_unit)
+    return run_with_timeout(satSolve, [clauses,tuple2idx], timeout)
 
+
+def F(chefs, vertices, edges, a, timeout):
+    return lambda time_ub: recipe2solve_with_timeout(chefs, vertices, edges,a, time_ub, timeout)
+
+
+
+def binarysearch(f,lb,ub):
+    """the function search for an minimal input x between lb and ub for which f returns the value True"""
+    while lb < ub:
+        mid = (lb + ub) // 2
+        new_ret = f(mid)
+        if new_ret:
+            ub = mid
+            last_ret = new_ret
+        else: 
+            lb = mid + 1
+    print("Final lb,ub = ",lb,ub)
+    return last_ret
+
+
+
+def solver(chefs, vertices, edges, a, timeout, ub, lb = 0):
+    if lb < ub:
+        return binarysearch(F(chefs, vertices, edges, a, timeout),lb,ub)
+    else:
+        print("Error: `lb` = ", lb, " is not smallar than `ub` = ", ub)
+        return False
