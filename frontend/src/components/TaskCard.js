@@ -41,18 +41,15 @@ export const TaskCard = ({
   
   // Initialize local timer when a non-attention task starts
   useEffect(() => {
-    if (isActive && currentAI && !needsAttention && !localTimer && !timerCompleted) {
+    if (isActive && currentAI && !needsAttention && localTimer === null && !timerCompleted) {
       const durationSeconds = unitsToSeconds(currentAI.duration);
       console.log(`[DEBUG] Timer init: task=${instructionIndex}, duration=${durationSeconds}s`);
       setLocalTimer(durationSeconds);
       setLocalStartTime(Date.now() / 1000);
       setTimerCompleted(false);
-    } else if (!isActive && localTimer && localTimer > 0) {
-      // Only reset timer if we don't have an active local timer running
-      // This prevents backend from interfering with our countdown
-      console.log(`[DEBUG] Task ${instructionIndex} no longer active, but keeping local timer running`);
-    } else if (!isActive && !localTimer && !timerCompleted) {
-      // Reset timer when task is not active and no local timer is running
+    } else if (!isActive && localTimer !== null) {
+      // Reset timer when task is no longer active
+      console.log(`[DEBUG] Task ${instructionIndex} no longer active, resetting timer`);
       setLocalTimer(null);
       setLocalStartTime(null);
       setTimerCompleted(false);
@@ -103,7 +100,7 @@ export const TaskCard = ({
   
   // Handle AI changes (e.g., moving from chopping to simmering) without re-initializing running timers
   useEffect(() => {
-    if (isActive && currentAI && !needsAttention && !localTimer && !timerCompleted) {
+    if (isActive && currentAI && !needsAttention && localTimer === null && !timerCompleted) {
       const durationSeconds = unitsToSeconds(currentAI.duration);
       console.log(`[DEBUG] Timer init from AI change: task=${instructionIndex}, duration=${durationSeconds}s`);
       setLocalTimer(durationSeconds);
@@ -197,15 +194,16 @@ export const TaskCard = ({
                     {needsAttention ? 'Manual task - mark when done' : 'Auto-completing...'}
                   </span>
                   {/* Only show timer for non-attention tasks */}
-                  {!needsAttention && remainingTimeSeconds > 0 && (
-                    <span className="text-primary-600 font-medium">
-                      {Math.floor(remainingTimeSeconds / 60)}:{(remainingTimeSeconds % 60).toString().padStart(2, '0')} remaining
+                  {!needsAttention && (localTimer !== null || timerCompleted) && (
+                    <span className={timerCompleted ? "text-red-600 font-medium" : "text-primary-600 font-medium"}>
+                      {Math.floor(remainingTimeSeconds / 60)}:{Math.floor(remainingTimeSeconds % 60).toString().padStart(2, '0')} 
+                      {timerCompleted ? " - Timer finished!" : " remaining"}
                     </span>
                   )}
                   {/* Show blinking message when local timer hits 0 for non-attention task */}
                   {!needsAttention && timerCompleted && (
-                    <span className="text-red-600 font-bold animate-blink">
-                      Task complete! Take off heat!
+                    <span className="text-red-600 font-bold animate-blink ml-2">
+                      Click "Mark Step Complete"
                     </span>
                   )}
                 </div>
@@ -236,17 +234,8 @@ export const TaskCard = ({
         </div>
       )}
       
-      {isActive && needsAttention && onMarkDone && (
-        <button
-          onClick={() => onMarkDone(instructionIndex)}
-          className="btn-success w-full mt-3"
-        >
-          Mark Step Complete
-        </button>
-      )}
-      
-      {/* Show button for non-attention tasks when timer has completed */}
-      {isActive && !needsAttention && timerCompleted && onMarkDone && (
+      {/* Show button for all active tasks, regardless of attention or timer status */}
+      {isActive && onMarkDone && (
         <button
           onClick={() => onMarkDone(instructionIndex)}
           className="btn-success w-full mt-3"

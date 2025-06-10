@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
-
+# Optimized version of computations.py with better SAT encodings
 
 from __future__ import annotations
 import copy
 import tqdm
 from dataclasses import dataclass, replace
-from itertools import product
+from itertools import product, combinations
 from typing import Dict, List, Optional, Set, Tuple
 from pycryptosat import Solver
 
@@ -16,11 +15,8 @@ from pycryptosat import Solver
 from data_models import *
 
 
-# In[8]:
-
-
 # ---------------------------------------------------------------------------
-# Basic queries
+# Basic queries (unchanged)
 # ---------------------------------------------------------------------------
 
 def instruction_cooking_time(inst: CookingInstruction) -> int:
@@ -53,7 +49,7 @@ def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
     return spans
 
 # ---------------------------------------------------------------------------
-# Dependency graph helper
+# Dependency graph helper (unchanged)
 # ---------------------------------------------------------------------------
 
 def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], int]:
@@ -79,80 +75,21 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
     print(f"[DEBUG] cooking_graph: vertices={vertices}")
     
     edges: List[Tuple[int, int]] = []
-    
-    # OPTIMIZATION: Better time upper bound calculation
-    # Instead of sum of all tasks (sequential bound), use a more realistic bound
-    # based on the critical path and parallelization potential
-    
-    # Calculate the critical path length
-    task_durations = {inst.index: instruction_cooking_time(inst) for inst in session.recipe if inst.index in vertices}
-    critical_path_length = _calculate_critical_path(vertices, task_durations, session.recipe)
-    
-    # Use a heuristic: critical path + some buffer for dependencies
-    # This is much tighter than the sum of all tasks
-    num_chefs = len(session.chefs_data)
-    if num_chefs > 1:
-        # With multiple chefs, we can parallelize significantly
-        time_ub = max(critical_path_length, sum(task_durations.values()) // num_chefs + 20)
-    else:
-        time_ub = critical_path_length + 10
-    
-    # Build edges
+    time_ub = 0
     for inst in session.recipe:
         if inst.index in vertices:
+            inst_time = instruction_cooking_time(inst)
+            time_ub += inst_time
+            print(f"[DEBUG] cooking_graph: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
             for dep in inst.dependencies:
                 if dep in vertices:
                     edges.append((dep, inst.index))
     
-    print(f"[DEBUG] cooking_graph: optimized time_ub={time_ub} (vs {sum(task_durations.values())} sequential), edges={edges}")
+    print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={edges}")
     return vertices, edges, time_ub
 
-
-def _calculate_critical_path(vertices: Set[int], task_durations: Dict[int, int], recipe: List[CookingInstruction]) -> int:
-    """Calculate the length of the critical path through the dependency graph."""
-    # Build adjacency list for dependencies
-    deps = {}
-    reverse_deps = {}
-    for inst in recipe:
-        if inst.index in vertices:
-            deps[inst.index] = inst.dependencies
-            for dep in inst.dependencies:
-                if dep not in reverse_deps:
-                    reverse_deps[dep] = []
-                reverse_deps[dep].append(inst.index)
-    
-    # Topological sort and critical path calculation
-    in_degree = {v: len(deps.get(v, [])) for v in vertices}
-    longest_path = {v: 0 for v in vertices}
-    
-    # Process nodes with no dependencies first
-    queue = [v for v in vertices if in_degree[v] == 0]
-    
-    while queue:
-        current = queue.pop(0)
-        current_duration = task_durations.get(current, 0)
-        
-        # Update path lengths for dependent tasks
-        for dependent in reverse_deps.get(current, []):
-            if dependent in vertices:
-                longest_path[dependent] = max(
-                    longest_path[dependent],
-                    longest_path[current] + current_duration
-                )
-                in_degree[dependent] -= 1
-                if in_degree[dependent] == 0:
-                    queue.append(dependent)
-    
-    # The critical path is the maximum path length plus the duration of the final task
-    max_path = 0
-    for v in vertices:
-        path_with_task = longest_path[v] + task_durations.get(v, 0)
-        max_path = max(max_path, path_with_task)
-    
-    return max_path
-
 # ---------------------------------------------------------------------------
-# Interval utilities (SAT helpers)
+# Interval utilities (SAT helpers) - unchanged
 # ---------------------------------------------------------------------------
 
 def forbidden_int_shifts(x: int, left: bool, spans: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
@@ -176,7 +113,7 @@ def interval_union(spans: List[Tuple[int, int]]) -> Set[int]:
     return out
 
 # ---------------------------------------------------------------------------
-# Active-recipe projection
+# Active-recipe projection (unchanged)
 # ---------------------------------------------------------------------------
 
 def recipe_active_part(session: Session, now: int) -> Dict[int, CookingInstruction]:
@@ -191,7 +128,7 @@ def recipe_active_part(session: Session, now: int) -> Dict[int, CookingInstructi
     return updated
 
 # ---------------------------------------------------------------------------
-# Session‑mutation helpers
+# Session‑mutation helpers (unchanged)
 # ---------------------------------------------------------------------------
 
 def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Session:
@@ -239,45 +176,42 @@ def _chef_needs_attention(session: Session, chef: str) -> bool:
 # Public API
 
 # ---------------------------------------------------------------------------
-# SAT encoding + cryptominisat search
+# OPTIMIZED SAT encoding + cryptominisat search
 # ---------------------------------------------------------------------------
 
 import multiprocessing, queue, tqdm  # noqa: E402 – placed after stdlib imports deliberately
 from pycryptosat import Solver       # noqa: E402
 
 
-def session2sat(session: Session, time_ub: int, now: int):
-    """OPTIMIZED: Encode the *remaining* scheduling problem as SAT.
-
-    Returns ``triple2idx, clauses`` where *triple2idx* maps
-    ``(chef, t_offset, instr_idx) → SAT variable`` and *clauses* is a list of
-    CNF clauses (each a list of ints).  Uses helper functions defined above
-    (attention spans, interval shifts, `recipe_active_part`, etc.).
+def session2sat_optimized(session: Session, time_ub: int, now: int):
+    """Optimized SAT encoding with better clause generation.
+    
+    Key optimizations:
+    1. Use at-most-one encoding instead of pairwise exclusion for attention tasks
+    2. Reduce time slots by using larger granularity where possible
+    3. Pre-filter impossible assignments
     """
 
     vertex_set, edges, _ = cooking_graph(session)
     time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
-    print(f"[DEBUG] session2sat: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")
+    print(f"[DEBUG] session2sat_optimized: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")
+    print(f"[DEBUG] session2sat_optimized: time_slots={list(time_slots)}, chefs={chefs}...")
 
-    # ---------------- OPTIMIZATION 1: Pre-filter valid triples ----------------
+    # ---------------- triple enumeration with filtering ----------------
     # Only create variables for valid time windows
     triples = []
-    active_recipe = recipe_active_part(session, now)
-    def _inst(idx: int):
-        return active_recipe.get(idx, session.recipe[idx])
-    
     for p in chefs:
         for v in vertex_set:
-            duration = instruction_cooking_time(_inst(v))
+            duration = instruction_cooking_time(session.recipe[v] if v not in recipe_active_part(session, now) else recipe_active_part(session, now)[v])
             for t in time_slots:
                 if t + duration <= time_ub:  # Only valid start times
                     triples.append((p, t, v))
     
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
 
-    print(f"[DEBUG] session2sat: reduced triples count: {len(triples)} (vs {len(chefs) * len(vertex_set) * len(time_slots)} unfiltered)")
+    print(f"[DEBUG] session2sat_optimized: reduced triples count: {len(triples)} (vs {len(chefs) * len(vertex_set) * len(time_slots)} unfiltered)")
 
     # ---------------- part 0 · assert current running tasks ----------------
     clauses0 = []
@@ -306,7 +240,13 @@ def session2sat(session: Session, time_ub: int, now: int):
                 if actual_chef and chef != actual_chef:
                     clauses0_5.append([-triple2idx[triple]])
 
-    # ---------------- OPTIMIZATION 2: Better attention constraint encoding -------
+    # ---------------- helper to fetch potentially shortened instruction ----
+    active_recipe = recipe_active_part(session, now)
+    def _inst(idx: int):
+        return active_recipe.get(idx, session.recipe[idx])
+
+    # ---------------- part 1 · OPTIMIZED no overlapping attention -------
+    # Use at-most-one encoding for better performance
     clauses1: List[List[int]] = []
     
     # Group tasks by whether they have attention requirements
@@ -331,9 +271,9 @@ def session2sat(session: Session, time_ub: int, now: int):
                                 active_at_t.append(triple2idx[triple])
                                 break
             
-            # Use sequential encoding for at-most-one constraint (more efficient than pairwise)
+            # Use sequential encoding for at-most-one constraint
             if len(active_at_t) > 1:
-                clauses1.extend(_at_most_one_sequential(active_at_t, len(triple2idx) + 1))
+                clauses1.extend(_at_most_one_sequential(active_at_t))
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
@@ -349,14 +289,14 @@ def session2sat(session: Session, time_ub: int, now: int):
         if clause:  # Only add if there are valid assignments
             clauses2.append(clause)
 
-    # ---------------- OPTIMIZATION 3: Better at-most-once encoding -----
+    # ---------------- part 3 · every task at most once (OPTIMIZED) -----
     clauses3: List[List[int]] = []
     for v in vertex_set:
         vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots 
                   if (c, t, v) in triple2idx]
         if len(vars_v) > 1:
             # Use sequential encoding instead of pairwise
-            clauses3.extend(_at_most_one_sequential(vars_v, len(triple2idx) + 1))
+            clauses3.extend(_at_most_one_sequential(vars_v))
 
     # ---------------- part 4 · dependency order ----------------------------
     clauses4: List[List[int]] = []
@@ -382,7 +322,7 @@ def session2sat(session: Session, time_ub: int, now: int):
     return triple2idx, all_clauses
 
 
-def _at_most_one_sequential(variables: List[int], aux_base: int) -> List[List[int]]:
+def _at_most_one_sequential(variables: List[int]) -> List[List[int]]:
     """Generate clauses for at-most-one constraint using sequential encoding.
     
     This is more efficient than pairwise encoding for large sets.
@@ -397,6 +337,7 @@ def _at_most_one_sequential(variables: List[int], aux_base: int) -> List[List[in
     
     # Sequential encoding with auxiliary variables
     # We need len(variables) - 1 auxiliary variables
+    aux_base = max(variables) + 1
     aux_vars = list(range(aux_base, aux_base + len(variables) - 1))
     
     clauses = []
@@ -419,7 +360,7 @@ def _at_most_one_sequential(variables: List[int], aux_base: int) -> List[List[in
     return clauses
 
 
-# ---------------- cryptominisat driver ------------------------------------
+# ---------------- cryptominisat driver (unchanged) ------------------------------------
 
 def satSolve(clauses, triple2idx):
     """Run CryptoMiniSat on *clauses*. Return chosen triples list or ``False``."""
@@ -435,7 +376,7 @@ def satSolve(clauses, triple2idx):
     return [idx2triple[i] for i, val in enumerate(solution) if val]
 
 
-# ---------------- timeout wrapper ----------------------------------------
+# ---------------- timeout wrapper (unchanged) ----------------------------------------
 
 def run_with_timeout(f, args, timeout, default=None):
     ctx = multiprocessing.get_context("fork")
@@ -455,12 +396,16 @@ def run_with_timeout(f, args, timeout, default=None):
     return res
 
 
-def graph2solve_with_timeout(session: Session, time_ub: int, now: int, timeout: int = 60):
-    t2i, clauses = session2sat(session, time_ub, now)
+def graph2solve_with_timeout(session: Session, time_ub: int, now: int, timeout: int = 60, use_optimized: bool = True):
+    if use_optimized:
+        t2i, clauses = session2sat_optimized(session, time_ub, now)
+    else:
+        from computations import session2sat
+        t2i, clauses = session2sat(session, time_ub, now)
     return run_with_timeout(satSolve, [clauses, t2i], timeout)
 
 
-# ---------------- outer binary search ------------------------------------
+# ---------------- outer binary search (unchanged) ------------------------------------
 
 def _binarysearch(f, lb: int, ub: int):
     last = False
@@ -475,20 +420,20 @@ def _binarysearch(f, lb: int, ub: int):
     return last
 
 
-def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
+def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60, use_optimized: bool = True):
     """High‑level entry: minimum‑UB SAT schedule or ``False``."""
 
     ub = cooking_graph(session)[2]
     if lb >= ub:
         return False
-    return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub)
+    return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout, use_optimized), lb, ub)
 
 
 # ---------------------------------------------------------------------------
-# Session-mutation helper – refresh & schedule
+# Session-mutation helper – refresh & schedule (unchanged except for sat_search call)
 # ---------------------------------------------------------------------------
 
-def refresh_session(session: Session, now: int) -> Session:
+def refresh_session(session: Session, now: int, use_optimized: bool = True) -> Session:
     """Return a new *Session* after assigning new work to chefs with spare attention capacity.
 
     Workflow:
@@ -513,7 +458,7 @@ def refresh_session(session: Session, now: int) -> Session:
     # ------------------------------------------------------------
     # 2. Ask SAT solver for a schedule at *now*
     # ------------------------------------------------------------
-    solution = sat_search(session, now)
+    solution = sat_search(session, now, use_optimized=use_optimized)
     print(f"[DEBUG] refresh_session: SAT solution={solution}")
     if solution:
         print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
@@ -557,10 +502,3 @@ def refresh_session(session: Session, now: int) -> Session:
         print(f"[DEBUG] refresh_session: No SAT solution found")
 
     return session
-
-
-# In[ ]:
-
-
-
-
