@@ -9,4 +9,7 @@ class ChefTask:
     when_started: Optional[datetime] = None
     when_dismissed: Optional[datetime] = None
 
+    class Config:
+        arbitrary_types_allowed = True
+
 __all__ = ["ChefTask"]

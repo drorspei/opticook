@@ -8,4 +8,8 @@ class Instruction:
     duration: int
     attention: bool
 
+    class Config:
+        """Pydantic config for dataclass validation."""
+        arbitrary_types_allowed = True
+
 __all__ = ["Instruction"]
