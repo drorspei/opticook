@@ -57,14 +57,23 @@ def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
 # ---------------------------------------------------------------------------
 
 def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], int]:
-    vertices: Set[int] = {inst.index for inst in session.recipe if inst.index not in session.done_tasks}
+    def is_instruction_completed(inst_index: int) -> bool:
+        """Check if an instruction is fully completed (all AIs are done)."""
+        if inst_index not in session.done_tasks:
+            return False
+        # Check if all AIs are done by comparing the number of completed AIs with total AIs
+        completed_ais = len(session.done_tasks[inst_index].time_data)
+        total_ais = len(session.recipe[inst_index].aiList)
+        return completed_ais == total_ais
+    
+    vertices: Set[int] = {inst.index for inst in session.recipe if not is_instruction_completed(inst.index)}
     edges: List[Tuple[int, int]] = []
     time_ub = 0
     for inst in session.recipe:
-        if inst.index not in session.done_tasks:
+        if not is_instruction_completed(inst.index):
             time_ub += instruction_cooking_time(inst)
             for dep in inst.dependencies:
-                if dep not in session.done_tasks:
+                if not is_instruction_completed(dep):
                     edges.append((dep, inst.index))
     return vertices, edges, time_ub
 
@@ -118,6 +127,10 @@ def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Se
     task = session.cooking_map[chef][inst_index]
     ai_idx = task.ai_index
 
+    # Ensure task.start_time is not None before using it
+    if task.start_time is None:
+        raise ValueError("Task has not started (start_time is None)")
+
     # update DoneTask list
     new_done_tasks = copy.deepcopy(session.done_tasks)
     if ai_idx == 0:
@@ -165,6 +178,7 @@ def session2sat(session: Session, time_ub: int, now: int):
     """
 
     vertex_set, edges, _ = cooking_graph(session)
+    print(f"[DEBUG] session2sat: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")  # Debug print
     time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
@@ -188,7 +202,7 @@ def session2sat(session: Session, time_ub: int, now: int):
     clauses1: List[List[int]] = []
     for v in vertex_set:
         for u in vertex_set:
-            if u == v:
+            if v == u:  # Skip self-overlap constraints
                 continue
             for t in time_slots:
                 for s in interval_union(
@@ -197,6 +211,12 @@ def session2sat(session: Session, time_ub: int, now: int):
                     if 0 <= t + s < time_ub:
                         for chef in chefs:
                             clauses1.append([-triple2idx[(chef, t + s, v)], -triple2idx[(chef, t, u)]])
+    
+    # Debug prints for clauses1
+    print(f"[DEBUG] clauses1 (attention overlap): {clauses1}")
+    print(f"[DEBUG] attention_span for instruction 0: {attention_span(_inst(0))}")
+    print(f"[DEBUG] forbidden_intervals_shifts: {forbidden_intervals_shifts(attention_span(_inst(0)), attention_span(_inst(0)))}")
+    print(f"[DEBUG] interval_union result: {interval_union(forbidden_intervals_shifts(attention_span(_inst(0)), attention_span(_inst(0))))}")
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
@@ -205,7 +225,7 @@ def session2sat(session: Session, time_ub: int, now: int):
         dur = instruction_cooking_time(_inst(v))
         for chef in chefs:
             for t in time_slots:
-                if t + dur <= time_ub - 1:
+                if t + dur <= time_ub:
                     clause.append(triple2idx[(chef, t, v)])
         clauses2.append(clause)
 
@@ -223,16 +243,18 @@ def session2sat(session: Session, time_ub: int, now: int):
         dur_dep = instruction_cooking_time(_inst(dep))
         for chef1 in chefs:
             for chef2 in chefs:
-                for t in time_slots:
-                    for s in range(t):  # strictly less than t
-                        if s + dur_dep > t:
-                            continue
-                    for t in time_slots:
-                        for s in time_slots:
-                            if s < t + dur_dep:
-                                clauses4.append([-triple2idx[(chef1, t, dep)], -triple2idx[(chef2, s, dst)]])
+                for t_dep in time_slots:
+                    for t_dst in time_slots:
+                        # dst cannot start before dep finishes
+                        if t_dst < t_dep + dur_dep:
+                            clauses4.append([-triple2idx[(chef1, t_dep, dep)], -triple2idx[(chef2, t_dst, dst)]])
 
     all_clauses = clauses0 + clauses1 + clauses2 + clauses3 + clauses4
+    # SANITY CHECK: Comment out all clauses except "at least once"
+    all_clauses = clauses0 + clauses1 + clauses2 + clauses3 + clauses4  # Add all constraints
+    print(f"[DEBUG] SAT clauses: clauses0={len(clauses0)}, clauses1={len(clauses1)}, clauses2={len(clauses2)}, clauses3={len(clauses3)}, clauses4={len(clauses4)}")  # Debug print
+    print(f"[DEBUG] clauses2 (at least once): {clauses2}")  # Debug print
+    print(f"[DEBUG] triple2idx: {triple2idx}")  # Debug print
     return triple2idx, all_clauses
 
 
@@ -281,12 +303,13 @@ def graph2solve_with_timeout(session: Session, time_ub: int, now: int, timeout: 
 
 def _binarysearch(f, lb: int, ub: int):
     last = False
-    while lb < ub:
+    while lb <= ub:
         mid = (lb + ub) // 2
+        print(f"[DEBUG] _binarysearch: testing mid={mid}")  # Debug print
         res = f(mid)
         if res:
             last = res
-            ub = mid
+            ub = mid - 1
         else:
             lb = mid + 1
     return last
@@ -296,7 +319,9 @@ def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
     """High‑level entry: minimum‑UB SAT schedule or ``False``."""
 
     ub = cooking_graph(session)[2]
+    print(f"[DEBUG] sat_search: now={now}, lb={lb}, ub={ub}")  # Debug print
     if lb >= ub:
+        print(f"[DEBUG] sat_search: lb >= ub, returning False")  # Debug print
         return False
     return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub)
 
@@ -317,7 +342,7 @@ def refresh_session(session: Session, now: int) -> Session:
        tasks.
     3. Run :func:`sat_search` to compute a schedule starting at *now*.
     4. If the SAT solution schedules an instruction at *t = 0* for an eligible
-       chef, start that instruction’s first AI immediately.
+       chef, start that instruction's first AI immediately.
     """
 
     # ------------------------------------------------------------
@@ -353,6 +378,9 @@ def refresh_session(session: Session, now: int) -> Session:
     # 3. Ask SAT solver for a schedule at *now*
     # ------------------------------------------------------------
     solution = sat_search(s, now)
+    print(f"[DEBUG] SAT solution at now={now}: {solution}")  # Debug print
+    if solution:
+        print(f"[DEBUG] Found valid solution: {solution}")  # Debug print for valid solutions
     if not solution:
         return s
 

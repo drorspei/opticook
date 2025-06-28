@@ -2,9 +2,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dataclasses import asdict
-from typing import List, Dict
+from typing import List, Dict, Optional
 
-from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units
+from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
 from computations import active_ai_done, refresh_session
 
 app = FastAPI()
@@ -16,11 +16,21 @@ RECIPE_STORE: Dict[str, List[Dict]] = {
             {"attention": True, "duration_seconds": 60, "description": "chop onions"},
             {"attention": False, "duration_seconds": 120, "description": "simmer"}
         ], "dependencies": []}
+    ],
+    "multi_task_recipe": [
+        {"index": 0, "aiList": [
+            {"attention": True, "duration_seconds": 60, "description": "chop onions"},
+            {"attention": False, "duration_seconds": 120, "description": "simmer onions"}
+        ], "dependencies": []},
+        {"index": 1, "aiList": [
+            {"attention": True, "duration_seconds": 90, "description": "chop carrots"},
+            {"attention": False, "duration_seconds": 180, "description": "boil carrots"}
+        ], "dependencies": []}
     ]
 }
 
 # Global session holder
-_current_session: Session = None
+_current_session: Optional[Session] = None
 
 # Pydantic models
 class StartPayload(BaseModel):
