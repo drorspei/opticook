@@ -1,13 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, CheckCircle, AlertCircle, Play } from 'lucide-react';
 import { 
   isTaskCompleted, 
   getTaskProgress, 
   getActiveTaskForChef, 
   getCurrentAI, 
-  getRemainingTime,
   formatDuration,
-  formatTime
+  unitsToSeconds
 } from '../utils';
 
 export const TaskCard = ({
@@ -31,10 +30,87 @@ export const TaskCard = ({
   
   // Get current AI if task is active
   const currentAI = isActive && activeTask ? getCurrentAI(session, instructionIndex, activeTask.ai_index) : null;
-  const remainingTime = isActive && activeTask ? getRemainingTime(session, activeTask, currentTime) : 0;
   
   // Check if current AI needs attention
   const needsAttention = currentAI?.attention || false;
+  
+  // Local timer state for non-attention tasks
+  const [localTimer, setLocalTimer] = useState(null);
+  const [localStartTime, setLocalStartTime] = useState(null);
+  const [timerCompleted, setTimerCompleted] = useState(false);
+  
+  // Initialize local timer when a non-attention task starts
+  useEffect(() => {
+    if (isActive && currentAI && !needsAttention && !localTimer && !timerCompleted) {
+      const durationSeconds = unitsToSeconds(currentAI.duration);
+      console.log(`[DEBUG] Timer init: task=${instructionIndex}, duration=${durationSeconds}s`);
+      setLocalTimer(durationSeconds);
+      setLocalStartTime(Date.now() / 1000);
+      setTimerCompleted(false);
+    } else if (!isActive && localTimer && localTimer > 0) {
+      // Only reset timer if we don't have an active local timer running
+      // This prevents backend from interfering with our countdown
+      console.log(`[DEBUG] Task ${instructionIndex} no longer active, but keeping local timer running`);
+    } else if (!isActive && !localTimer && !timerCompleted) {
+      // Reset timer when task is not active and no local timer is running
+      setLocalTimer(null);
+      setLocalStartTime(null);
+      setTimerCompleted(false);
+    }
+  }, [isActive, needsAttention, localTimer, instructionIndex, timerCompleted]);
+  
+  // Update local timer countdown and show completion signal when done
+  useEffect(() => {
+    if (localTimer && localStartTime && !needsAttention && !timerCompleted) {
+      const interval = setInterval(() => {
+        setLocalTimer(prevTimer => {
+          if (prevTimer <= 0) {
+            // Timer completed - show completion signal but don't auto-send to backend
+            console.log(`[DEBUG] Timer completed! Showing completion signal for task ${instructionIndex}`);
+            setTimerCompleted(true);
+            return 0; // Keep at 0 instead of null to prevent effect re-run
+          }
+          const newTimer = prevTimer - 0.1; // Update every 100ms for smooth countdown
+          return Math.max(0, newTimer);
+        });
+      }, 100);
+
+      return () => clearInterval(interval);
+    }
+  }, [localStartTime, needsAttention, timerCompleted, instructionIndex]); // Removed localTimer from dependencies
+  
+  // Calculate remaining time - use local timer for non-attention tasks
+  let remainingTimeSeconds = 0;
+  if (isActive && currentAI) {
+    if (needsAttention) {
+      // For attention tasks, don't show timer
+      remainingTimeSeconds = 0;
+    } else {
+      // For non-attention tasks, use local timer
+      remainingTimeSeconds = localTimer || 0;
+    }
+  }
+  
+  // Clean up timer when task is truly completed (all AIs done)
+  useEffect(() => {
+    if (isCompleted && localTimer) {
+      console.log(`[DEBUG] Task ${instructionIndex} truly completed, cleaning up timer`);
+      setLocalTimer(null);
+      setLocalStartTime(null);
+      setTimerCompleted(false);
+    }
+  }, [isCompleted, localTimer, instructionIndex]);
+  
+  // Handle AI changes (e.g., moving from chopping to simmering) without re-initializing running timers
+  useEffect(() => {
+    if (isActive && currentAI && !needsAttention && !localTimer && !timerCompleted) {
+      const durationSeconds = unitsToSeconds(currentAI.duration);
+      console.log(`[DEBUG] Timer init from AI change: task=${instructionIndex}, duration=${durationSeconds}s`);
+      setLocalTimer(durationSeconds);
+      setLocalStartTime(Date.now() / 1000);
+      setTimerCompleted(false);
+    }
+  }, [currentAI?.duration, currentAI?.attention, isActive, needsAttention, localTimer, timerCompleted, instructionIndex]); // Added all necessary dependencies
   
   const getStatusIcon = () => {
     if (isCompleted) {
@@ -120,9 +196,16 @@ export const TaskCard = ({
                   <span className="text-primary-700">
                     {needsAttention ? 'Manual task - mark when done' : 'Auto-completing...'}
                   </span>
-                  {remainingTime > 0 && (
+                  {/* Only show timer for non-attention tasks */}
+                  {!needsAttention && remainingTimeSeconds > 0 && (
                     <span className="text-primary-600 font-medium">
-                      {formatTime(remainingTime)} remaining
+                      {Math.floor(remainingTimeSeconds / 60)}:{(remainingTimeSeconds % 60).toString().padStart(2, '0')} remaining
+                    </span>
+                  )}
+                  {/* Show blinking message when local timer hits 0 for non-attention task */}
+                  {!needsAttention && timerCompleted && (
+                    <span className="text-red-600 font-bold animate-blink">
+                      Task complete! Take off heat!
                     </span>
                   )}
                 </div>
@@ -154,6 +237,16 @@ export const TaskCard = ({
       )}
       
       {isActive && needsAttention && onMarkDone && (
+        <button
+          onClick={() => onMarkDone(instructionIndex)}
+          className="btn-success w-full mt-3"
+        >
+          Mark Step Complete
+        </button>
+      )}
+      
+      {/* Show button for non-attention tasks when timer has completed */}
+      {isActive && !needsAttention && timerCompleted && onMarkDone && (
         <button
           onClick={() => onMarkDone(instructionIndex)}
           className="btn-success w-full mt-3"

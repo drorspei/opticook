@@ -15,29 +15,28 @@ import {
 function App() {
   const [session, setSession] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [sessionStartTime, setSessionStartTime] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [sessionStartTime, setSessionStartTime] = useState(0);
+  const [testMode, setTestMode] = useState(false); // Test mode to disable refresh requests
   
-  // Timer for updating current time
+  // Update current time every second
   useEffect(() => {
-    if (session) {
-      const interval = setInterval(() => {
-        setCurrentTime(Math.floor(Date.now() / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [session]);
+    const interval = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
   
-  // Auto-refresh session state
+  // Auto-refresh session state (heartbeat every 100ms as per spec)
   useEffect(() => {
-    if (session) {
+    if (session && !testMode) { // Only refresh if not in test mode
       const interval = setInterval(() => {
         refreshSession();
-      }, 5000); // Refresh every 5 seconds
+      }, 100); // Refresh every 100ms (0.1 seconds) as per spec
       return () => clearInterval(interval);
     }
-  }, [session]);
+  }, [session, testMode]);
   
   const refreshSession = useCallback(async () => {
     if (!session) return;
@@ -101,7 +100,9 @@ function App() {
   };
   
   const handleSessionStarted = () => {
-    setSessionStartTime(currentTime);
+    const now = Math.floor(Date.now() / 1000);
+    setSessionStartTime(now);
+    setCurrentTime(now);
     // Load initial session state
     loadSessionState();
   };
@@ -151,6 +152,18 @@ function App() {
                 <span>Session Time: {formatTime(timeInUnits(elapsedTime))}</span>
               </div>
               
+              {/* Test Mode Toggle */}
+              <button
+                onClick={() => setTestMode(!testMode)}
+                className={`px-3 py-1 rounded text-sm font-medium ${
+                  testMode 
+                    ? 'bg-red-100 text-red-800 border border-red-300' 
+                    : 'bg-green-100 text-green-800 border border-green-300'
+                }`}
+              >
+                {testMode ? 'Test Mode ON' : 'Test Mode OFF'}
+              </button>
+              
               <button
                 onClick={refreshSession}
                 disabled={loading}
@@ -178,6 +191,15 @@ function App() {
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-800">{error}</p>
+          </div>
+        )}
+        
+        {/* Test Mode Indicator */}
+        {testMode && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-yellow-800 font-medium">
+              🧪 Test Mode Active: Refresh requests are disabled. Timer should run independently.
+            </p>
           </div>
         )}
         

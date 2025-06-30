@@ -66,15 +66,30 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
         total_ais = len(session.recipe[inst_index].aiList)
         return completed_ais == total_ais
     
-    vertices: Set[int] = {inst.index for inst in session.recipe if not is_instruction_completed(inst.index)}
+    # Include all instructions that are either not completed OR currently active
+    vertices: Set[int] = set()
+    for inst in session.recipe:
+        if not is_instruction_completed(inst.index):
+            vertices.add(inst.index)
+        # Also include instructions that are currently being worked on
+        for chef_tasks in session.cooking_map.values():
+            if inst.index in chef_tasks:
+                vertices.add(inst.index)
+    
+    print(f"[DEBUG] cooking_graph: vertices={vertices}")
+    
     edges: List[Tuple[int, int]] = []
     time_ub = 0
     for inst in session.recipe:
-        if not is_instruction_completed(inst.index):
-            time_ub += instruction_cooking_time(inst)
+        if inst.index in vertices:
+            inst_time = instruction_cooking_time(inst)
+            time_ub += inst_time
+            print(f"[DEBUG] cooking_graph: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
             for dep in inst.dependencies:
-                if not is_instruction_completed(dep):
+                if dep in vertices:
                     edges.append((dep, inst.index))
+    
+    print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={edges}")
     return vertices, edges, time_ub
 
 # ---------------------------------------------------------------------------
@@ -121,11 +136,13 @@ def recipe_active_part(session: Session, now: int) -> Dict[int, CookingInstructi
 # ---------------------------------------------------------------------------
 
 def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Session:
+    print(f"[DEBUG] active_ai_done: chef={chef}, inst_index={inst_index}, now={now}")
     if chef not in session.cooking_map or inst_index not in session.cooking_map[chef]:
         raise KeyError("No such active task for chef")
 
     task = session.cooking_map[chef][inst_index]
     ai_idx = task.ai_index
+    print(f"[DEBUG] active_ai_done: current ai_idx={ai_idx}, total AIs={len(session.recipe[inst_index].aiList)}")
 
     # Ensure task.start_time is not None before using it
     if task.start_time is None:
@@ -142,8 +159,10 @@ def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Se
     # rebuild cooking_map
     new_map = copy.deepcopy(session.cooking_map)
     if ai_idx + 1 < len(session.recipe[inst_index].aiList):
+        print(f"[DEBUG] active_ai_done: advancing to next AI (ai_idx + 1 = {ai_idx + 1})")
         new_map[chef][inst_index] = ActiveTask(inst_index, ai_idx + 1, now)
     else:
+        print(f"[DEBUG] active_ai_done: instruction completed, removing from cooking_map")
         del new_map[chef][inst_index]
         if not new_map[chef]:
             del new_map[chef]
@@ -181,16 +200,56 @@ def session2sat(session: Session, time_ub: int, now: int):
     time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
+    print(f"[DEBUG] session2sat: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")
+    print(f"[DEBUG] session2sat: time_slots={list(time_slots)}, chefs={chefs}")
+
     # ---------------- triple enumeration ----------------
     triples = [(p, t, v) for p in chefs for v in vertex_set for t in time_slots]
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
 
+    print(f"[DEBUG] session2sat: triples={triples}")
+    print(f"[DEBUG] session2sat: triple2idx={triple2idx}")
+
     # ---------------- part 0 · assert current running tasks ----------------
-    clauses0 = [
-        [triple2idx[(chef, 0, task.instruction_index)]]
-        for chef, tasks in session.cooking_map.items()
-        for task in tasks.values()
-    ]
+    clauses0 = []
+    for chef, tasks in session.cooking_map.items():
+        for task in tasks.values():
+            triple = (chef, 0, task.instruction_index)
+            print(f"[DEBUG] session2sat: trying to access triple={triple}")
+            if triple in triple2idx:
+                clauses0.append([triple2idx[triple]])
+            else:
+                print(f"[DEBUG] session2sat: WARNING - triple {triple} not in triple2idx!")
+                # Skip this clause if the triple is not in the mapping
+                continue
+
+    print(f"[DEBUG] session2sat: clauses0={clauses0}")
+
+    # ---------------- part 0.5 · exclude instructions already being worked on ----------------
+    clauses0_5 = []
+    # Get all instructions currently being worked on
+    active_instructions = set()
+    for chef_tasks in session.cooking_map.values():
+        active_instructions.update(chef_tasks.keys())
+    
+    # For each active instruction, ensure it's not assigned to any other chef at time 0
+    for inst_idx in active_instructions:
+        for chef in chefs:
+            triple = (chef, 0, inst_idx)
+            if triple in triple2idx:
+                # Find the chef who is actually working on this instruction
+                actual_chef = None
+                for c, tasks in session.cooking_map.items():
+                    if inst_idx in tasks:
+                        actual_chef = c
+                        break
+                
+                # If this is not the actual chef working on it, exclude this assignment
+                if actual_chef and chef != actual_chef:
+                    clauses0_5.append([-triple2idx[triple]])
+                    print(f"[DEBUG] session2sat: excluding {triple} (not the actual chef)")
+
+    print(f"[DEBUG] session2sat: clauses0_5={clauses0_5}")
 
     # ---------------- helper to fetch potentially shortened instruction ----
     active_recipe = recipe_active_part(session, now)
@@ -242,7 +301,7 @@ def session2sat(session: Session, time_ub: int, now: int):
                         if t_dst < t_dep + dur_dep:
                             clauses4.append([-triple2idx[(chef1, t_dep, dep)], -triple2idx[(chef2, t_dst, dst)]])
 
-    all_clauses = clauses0 + clauses1 + clauses2 + clauses3 + clauses4
+    all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4
     return triple2idx, all_clauses
 
 
@@ -316,66 +375,74 @@ def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
 # ---------------------------------------------------------------------------
 
 def refresh_session(session: Session, now: int) -> Session:
-    """Return a new *Session* after advancing finished timers **and** assigning
-    new work to chefs with spare attention capacity.
+    """Return a new *Session* after assigning new work to chefs with spare attention capacity.
 
     Workflow:
-    1. **Auto‑tick timers** – for every *low‑attention* `ActiveTask`, if
-       `now - start_time >= duration` we finish that AI via
-       :func:`active_ai_done` (looping until all timers are settled).
-    2. Identify chefs that are now either idle or running only low‑attention
+    1. Identify chefs that are now either idle or running only low‑attention
        tasks.
-    3. Run :func:`sat_search` to compute a schedule starting at *now*.
-    4. If the SAT solution schedules an instruction at *t = 0* for an eligible
+    2. Run :func:`sat_search` to compute a schedule starting at *now*.
+    3. If the SAT solution schedules an instruction at *t = 0* for an eligible
        chef, start that instruction's first AI immediately.
     """
 
     # ------------------------------------------------------------
-    # 1. Auto‑finish low‑attention timers that have expired
-    # ------------------------------------------------------------
-    s = session  # work on an immutable copy via reassignment
-    changed = True
-    while changed:
-        changed = False
-        for chef, tasks in list(s.cooking_map.items()):
-            for inst_idx, task in list(tasks.items()):
-                ai = s.recipe[task.instruction_index].aiList[task.ai_index]
-                if not ai.attention and task.start_time is not None and (
-                    now - task.start_time >= ai.duration
-                ):
-                    finish_time = task.start_time + ai.duration
-                    s = active_ai_done(s, chef, inst_idx, finish_time)
-                    changed = True
-                    break  # restart because s changed
-            if changed:
-                break
-
-    # ------------------------------------------------------------
-    # 2. Find chefs with spare attention bandwidth
+    # 1. Find chefs with spare attention bandwidth
     # ------------------------------------------------------------
     eligible_chefs = {
-        c for c in s.chefs_data if not _chef_needs_attention(s, c)
+        c for c in session.chefs_data if not _chef_needs_attention(session, c)
     }
+    print(f"[DEBUG] refresh_session: now={now}, eligible_chefs={eligible_chefs}")
     if not eligible_chefs:
-        return s
+        print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
+        return session
 
     # ------------------------------------------------------------
-    # 3. Ask SAT solver for a schedule at *now*
+    # 2. Ask SAT solver for a schedule at *now*
     # ------------------------------------------------------------
-    solution = sat_search(s, now)
+    solution = sat_search(session, now)
+    print(f"[DEBUG] refresh_session: SAT solution={solution}")
     if solution:
-        new_map = copy.deepcopy(s.cooking_map)
+        print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
+        new_map = copy.deepcopy(session.cooking_map)
+        print(f"[DEBUG] refresh_session: initial new_map={new_map}")
+        
+        # Get set of instructions that are already being worked on
+        active_instructions = set()
+        for chef_tasks in new_map.values():
+            active_instructions.update(chef_tasks.keys())
+        print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
+        
+        # Track if we actually made any new assignments
+        made_new_assignments = False
+        
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
+            print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
             if starts:
                 inst_idx = starts[0][2]
-                new_map.setdefault(chef, {})[inst_idx] = ActiveTask(
-                    inst_idx, 0, now
-                )
+                # Only assign if this instruction is not already being worked on
+                if inst_idx not in active_instructions:
+                    print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
+                    if chef not in new_map:
+                        new_map[chef] = {}
+                    new_map[chef][inst_idx] = ActiveTask(
+                        inst_idx, 0, now
+                    )
+                    made_new_assignments = True
+                    print(f"[DEBUG] refresh_session: updated new_map={new_map}")
+                else:
+                    print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
+        
+        # Only update the session if we actually made new assignments
+        if made_new_assignments:
+            return replace(session, cooking_map=new_map)
+        else:
+            print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
+            return session
+    else:
+        print(f"[DEBUG] refresh_session: No SAT solution found")
 
-        return replace(s, cooking_map=new_map)
-
-    return s
+    return session
 
 
 # In[ ]:

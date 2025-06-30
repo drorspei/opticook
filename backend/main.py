@@ -14,17 +14,17 @@ RECIPE_STORE: Dict[str, List[Dict]] = {
     "example_recipe": [
         {"index": 0, "aiList": [
             {"attention": True, "duration_seconds": 60, "description": "chop onions"},
-            {"attention": False, "duration_seconds": 120, "description": "simmer"}
+            {"attention": False, "duration_seconds": 30, "description": "simmer"}
         ], "dependencies": []}
     ],
     "multi_task_recipe": [
         {"index": 0, "aiList": [
             {"attention": True, "duration_seconds": 60, "description": "chop onions"},
-            {"attention": False, "duration_seconds": 120, "description": "simmer onions"}
+            {"attention": False, "duration_seconds": 30, "description": "simmer onions"}
         ], "dependencies": []},
         {"index": 1, "aiList": [
             {"attention": True, "duration_seconds": 90, "description": "chop carrots"},
-            {"attention": False, "duration_seconds": 180, "description": "boil carrots"}
+            {"attention": False, "duration_seconds": 30, "description": "boil carrots"}
         ], "dependencies": []}
     ]
 }
@@ -88,23 +88,32 @@ def mark_done(payload: DonePayload):
     global _current_session
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
+    print(f"[DEBUG] mark_done API: chef={payload.chef}, instruction_index={payload.instruction_index}, timestamp_seconds={payload.timestamp_seconds}")
     # Convert client timestamp to quanta
     now_quanta = time_in_units(payload.timestamp_seconds)
+    print(f"[DEBUG] mark_done API: now_quanta={now_quanta}")
     try:
         new_session = active_ai_done(
             _current_session, payload.chef, payload.instruction_index, now_quanta
         )
+        print(f"[DEBUG] mark_done API: session updated successfully")
+        _current_session = new_session
+        return asdict(_current_session)
     except KeyError as e:
+        print(f"[DEBUG] mark_done API: KeyError - {e}")
         raise HTTPException(status_code=400, detail=str(e))
-    _current_session = new_session
-    return asdict(_current_session)
+    except Exception as e:
+        print(f"[DEBUG] mark_done API: Exception - {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/v1/session/current/refresh")
 def refresh(payload: RefreshPayload):
     global _current_session
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
+    print(f"[DEBUG] refresh API: timestamp_seconds={payload.timestamp_seconds}")
     now_quanta = time_in_units(payload.timestamp_seconds)
+    print(f"[DEBUG] refresh API: now_quanta={now_quanta}")
     _current_session = refresh_session(_current_session, now_quanta)
     return asdict(_current_session)
 

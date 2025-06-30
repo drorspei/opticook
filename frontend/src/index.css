@@ -40,4 +40,12 @@
   .task-completed {
     @apply border-l-4 border-l-success-500 bg-success-50 opacity-75;
   }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-blink {
+  animation: blink 1s steps(2, start) infinite;
 } 
