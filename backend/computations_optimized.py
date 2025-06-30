@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from itertools import product, combinations
 from typing import Dict, List, Optional, Set, Tuple
 from pycryptosat import Solver
+from functools import lru_cache
 
 
 from data_models import *
@@ -19,10 +20,17 @@ from data_models import *
 # Basic queries (unchanged)
 # ---------------------------------------------------------------------------
 
+# Cache using a wrapper that converts to hashable types
+@lru_cache(maxsize=1000)
+def _instruction_cooking_time_cached(ai_durations: tuple) -> int:
+    """Cached version that takes tuple of durations."""
+    return sum(ai_durations)
+
 def instruction_cooking_time(inst: CookingInstruction) -> int:
     """Return total quanta for *inst* (sum of its AIs)."""
-
-    return sum(ai.duration for ai in inst.aiList)
+    # Convert to hashable tuple for caching
+    ai_durations = tuple(ai.duration for ai in inst.aiList)
+    return _instruction_cooking_time_cached(ai_durations)
 
 
 def is_in_attention(recipe: List[CookingInstruction], task: ActiveTask) -> bool:
@@ -39,14 +47,23 @@ def time_left_in_attention(recipe: List[CookingInstruction], task: ActiveTask, n
     return max(0, remaining)
 
 
-def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
+# Cache using a wrapper that converts to hashable types
+@lru_cache(maxsize=1000)
+def _attention_span_cached(ai_data: tuple) -> List[Tuple[int, int]]:
+    """Cached version that takes tuple of (attention, duration) pairs."""
     offset = 0
     spans: List[Tuple[int, int]] = []
-    for ai in inst.aiList:
-        if ai.attention:
-            spans.append((offset, offset + ai.duration))
-        offset += ai.duration
+    for attention, duration in ai_data:
+        if attention:
+            spans.append((offset, offset + duration))
+        offset += duration
     return spans
+
+def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
+    """Return attention spans for instruction."""
+    # Convert to hashable tuple for caching
+    ai_data = tuple((ai.attention, ai.duration) for ai in inst.aiList)
+    return _attention_span_cached(ai_data)
 
 # ---------------------------------------------------------------------------
 # Dependency graph helper (unchanged)
@@ -72,7 +89,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
             if inst.index in chef_tasks:
                 vertices.add(inst.index)
     
-    print(f"[DEBUG] cooking_graph: vertices={vertices}")
+    print(f"[DEBUG] cooking_graph: vertices={len(vertices)}")
     
     edges: List[Tuple[int, int]] = []
     time_ub = 0
@@ -85,30 +102,40 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
                 if dep in vertices:
                     edges.append((dep, inst.index))
     
-    print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={edges}")
+    print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={len(edges)}")
     return vertices, edges, time_ub
 
 # ---------------------------------------------------------------------------
 # Interval utilities (SAT helpers) - unchanged
 # ---------------------------------------------------------------------------
 
-def forbidden_int_shifts(x: int, left: bool, spans: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+@lru_cache(maxsize=1000)
+def forbidden_int_shifts(x: int, left: bool, spans: tuple) -> List[Tuple[int, int]]:
+    # Convert tuple back to list for processing
+    spans_list = list(spans)
     if left:
-        return [(s - x, e - x - 1) for s, e in spans]
-    return [(s - x + 1, e - x) for s, e in spans]
+        return [(s - x, e - x - 1) for s, e in spans_list]
+    return [(s - x + 1, e - x) for s, e in spans_list]
 
 
-def forbidden_intervals_shifts(a: List[Tuple[int, int]], b: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+@lru_cache(maxsize=1000)
+def forbidden_intervals_shifts(a: tuple, b: tuple) -> List[Tuple[int, int]]:
+    # Convert tuples back to lists for processing
+    a_list = list(a)
+    b_tuple = b  # Keep as tuple for forbidden_int_shifts
     out: List[Tuple[int, int]] = []
-    for s, e in a:
-        out.extend(forbidden_int_shifts(s, True, b))
-        out.extend(forbidden_int_shifts(e, False, b))
+    for s, e in a_list:
+        out.extend(forbidden_int_shifts(s, True, b_tuple))
+        out.extend(forbidden_int_shifts(e, False, b_tuple))
     return out
 
 
-def interval_union(spans: List[Tuple[int, int]]) -> Set[int]:
+@lru_cache(maxsize=1000)
+def interval_union(spans: tuple) -> Set[int]:
+    # Convert tuple back to list for processing
+    spans_list = list(spans)
     out: Set[int] = set()
-    for s, e in spans:
+    for s, e in spans_list:
         out.update(range(s, e + 1))
     return out
 
@@ -273,7 +300,8 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
             
             # Use sequential encoding for at-most-one constraint
             if len(active_at_t) > 1:
-                clauses1.extend(_at_most_one_sequential(active_at_t))
+                clauses_tuple = _at_most_one_sequential(tuple(active_at_t))
+                clauses1.extend([list(clause) for clause in clauses_tuple])
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
@@ -296,7 +324,8 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                   if (c, t, v) in triple2idx]
         if len(vars_v) > 1:
             # Use sequential encoding instead of pairwise
-            clauses3.extend(_at_most_one_sequential(vars_v))
+            clauses_tuple = _at_most_one_sequential(tuple(vars_v))
+            clauses3.extend([list(clause) for clause in clauses_tuple])
 
     # ---------------- part 4 · dependency order ----------------------------
     clauses4: List[List[int]] = []
@@ -322,42 +351,46 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     return triple2idx, all_clauses
 
 
-def _at_most_one_sequential(variables: List[int]) -> List[List[int]]:
+@lru_cache(maxsize=1000)
+def _at_most_one_sequential(variables: tuple) -> tuple:
     """Generate clauses for at-most-one constraint using sequential encoding.
     
     This is more efficient than pairwise encoding for large sets.
     Uses O(3n) clauses instead of O(n²) clauses.
     """
-    if len(variables) <= 1:
-        return []
+    # Convert tuple back to list for processing
+    vars_list = list(variables)
     
-    if len(variables) == 2:
+    if len(vars_list) <= 1:
+        return tuple()
+    
+    if len(vars_list) == 2:
         # For 2 variables, pairwise is optimal
-        return [[-variables[0], -variables[1]]]
+        return ((-vars_list[0], -vars_list[1]),)
     
     # Sequential encoding with auxiliary variables
     # We need len(variables) - 1 auxiliary variables
-    aux_base = max(variables) + 1
-    aux_vars = list(range(aux_base, aux_base + len(variables) - 1))
+    aux_base = max(vars_list) + 1
+    aux_vars = list(range(aux_base, aux_base + len(vars_list) - 1))
     
     clauses = []
     
     # First variable implies first aux
-    clauses.append([-variables[0], aux_vars[0]])
+    clauses.append((-vars_list[0], aux_vars[0]))
     
     # Middle variables
-    for i in range(1, len(variables) - 1):
+    for i in range(1, len(vars_list) - 1):
         # If variable i is true, then aux[i] is true
-        clauses.append([-variables[i], aux_vars[i]])
+        clauses.append((-vars_list[i], aux_vars[i]))
         # If aux[i-1] is true, then variable i is false
-        clauses.append([-aux_vars[i-1], -variables[i]])
+        clauses.append((-aux_vars[i-1], -vars_list[i]))
         # If aux[i-1] is false and variable i is false, then aux[i] is false
-        clauses.append([aux_vars[i-1], variables[i], -aux_vars[i]])
+        clauses.append((aux_vars[i-1], vars_list[i], -aux_vars[i]))
     
     # Last variable
-    clauses.append([-aux_vars[-1], -variables[-1]])
+    clauses.append((-aux_vars[-1], -vars_list[-1]))
     
-    return clauses
+    return tuple(clauses)
 
 
 # ---------------- cryptominisat driver (unchanged) ------------------------------------
@@ -373,7 +406,7 @@ def satSolve(clauses, triple2idx):
         return False
 
     idx2triple = {idx: tpl for tpl, idx in triple2idx.items()}
-    return [idx2triple[i] for i, val in enumerate(solution) if val]
+    return [idx2triple[i] for i, val in enumerate(solution) if val and i in idx2triple]
 
 
 # ---------------- timeout wrapper (unchanged) ----------------------------------------

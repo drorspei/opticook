@@ -7,7 +7,7 @@ import csv
 import os
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
-from computations import active_ai_done, refresh_session
+from computations_optimized import active_ai_done, refresh_session
 
 app = FastAPI()
 

@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from itertools import product
 from typing import Dict, List, Optional, Set, Tuple
 from pycryptosat import Solver
+from functools import lru_cache
 
 
 from data_models import *
@@ -23,10 +24,17 @@ from data_models import *
 # Basic queries
 # ---------------------------------------------------------------------------
 
+# Cache using a wrapper that converts to hashable types
+@lru_cache(maxsize=1000)
+def _instruction_cooking_time_cached(ai_durations: tuple) -> int:
+    """Cached version that takes tuple of durations."""
+    return sum(ai_durations)
+
 def instruction_cooking_time(inst: CookingInstruction) -> int:
     """Return total quanta for *inst* (sum of its AIs)."""
-
-    return sum(ai.duration for ai in inst.aiList)
+    # Convert to hashable tuple for caching
+    ai_durations = tuple(ai.duration for ai in inst.aiList)
+    return _instruction_cooking_time_cached(ai_durations)
 
 
 def is_in_attention(recipe: List[CookingInstruction], task: ActiveTask) -> bool:
@@ -43,14 +51,23 @@ def time_left_in_attention(recipe: List[CookingInstruction], task: ActiveTask, n
     return max(0, remaining)
 
 
-def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
+# Cache using a wrapper that converts to hashable types
+@lru_cache(maxsize=1000)
+def _attention_span_cached(ai_data: tuple) -> List[Tuple[int, int]]:
+    """Cached version that takes tuple of (attention, duration) pairs."""
     offset = 0
     spans: List[Tuple[int, int]] = []
-    for ai in inst.aiList:
-        if ai.attention:
-            spans.append((offset, offset + ai.duration))
-        offset += ai.duration
+    for attention, duration in ai_data:
+        if attention:
+            spans.append((offset, offset + duration))
+        offset += duration
     return spans
+
+def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
+    """Return attention spans for instruction."""
+    # Convert to hashable tuple for caching
+    ai_data = tuple((ai.attention, ai.duration) for ai in inst.aiList)
+    return _attention_span_cached(ai_data)
 
 # ---------------------------------------------------------------------------
 # Dependency graph helper
@@ -76,7 +93,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
             if inst.index in chef_tasks:
                 vertices.add(inst.index)
     
-    print(f"[DEBUG] cooking_graph: vertices={vertices}")
+    print(f"[DEBUG] cooking_graph: # vertices={len(vertices)}")
     
     edges: List[Tuple[int, int]] = []
     
@@ -104,7 +121,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
                 if dep in vertices:
                     edges.append((dep, inst.index))
     
-    print(f"[DEBUG] cooking_graph: optimized time_ub={time_ub} (vs {sum(task_durations.values())} sequential), edges={edges}")
+    print(f"[DEBUG] cooking_graph: optimized time_ub={time_ub} (vs {sum(task_durations.values())} sequential), # edges={len(edges)}")
     return vertices, edges, time_ub
 
 
@@ -382,41 +399,51 @@ def session2sat(session: Session, time_ub: int, now: int):
     return triple2idx, all_clauses
 
 
-def _at_most_one_sequential(variables: List[int], aux_base: int) -> List[List[int]]:
+@lru_cache(maxsize=1000)
+def _at_most_one_sequential_cached(variables: tuple, aux_base: int) -> tuple:
     """Generate clauses for at-most-one constraint using sequential encoding.
     
     This is more efficient than pairwise encoding for large sets.
     Uses O(3n) clauses instead of O(n²) clauses.
     """
-    if len(variables) <= 1:
-        return []
+    # Convert tuple back to list for processing
+    vars_list = list(variables)
     
-    if len(variables) == 2:
+    if len(vars_list) <= 1:
+        return tuple()
+    
+    if len(vars_list) == 2:
         # For 2 variables, pairwise is optimal
-        return [[-variables[0], -variables[1]]]
+        return ((-vars_list[0], -vars_list[1]),)
     
     # Sequential encoding with auxiliary variables
     # We need len(variables) - 1 auxiliary variables
-    aux_vars = list(range(aux_base, aux_base + len(variables) - 1))
+    aux_vars = list(range(aux_base, aux_base + len(vars_list) - 1))
     
     clauses = []
     
     # First variable implies first aux
-    clauses.append([-variables[0], aux_vars[0]])
+    clauses.append((-vars_list[0], aux_vars[0]))
     
     # Middle variables
-    for i in range(1, len(variables) - 1):
+    for i in range(1, len(vars_list) - 1):
         # If variable i is true, then aux[i] is true
-        clauses.append([-variables[i], aux_vars[i]])
+        clauses.append((-vars_list[i], aux_vars[i]))
         # If aux[i-1] is true, then variable i is false
-        clauses.append([-aux_vars[i-1], -variables[i]])
+        clauses.append((-aux_vars[i-1], -vars_list[i]))
         # If aux[i-1] is false and variable i is false, then aux[i] is false
-        clauses.append([aux_vars[i-1], variables[i], -aux_vars[i]])
+        clauses.append((aux_vars[i-1], vars_list[i], -aux_vars[i]))
     
     # Last variable
-    clauses.append([-aux_vars[-1], -variables[-1]])
+    clauses.append((-aux_vars[-1], -vars_list[-1]))
     
-    return clauses
+    return tuple(clauses)
+
+def _at_most_one_sequential(variables: List[int], aux_base: int) -> List[List[int]]:
+    """Generate clauses for at-most-one constraint using sequential encoding."""
+    # Use cached version and convert back to lists
+    clauses_tuple = _at_most_one_sequential_cached(tuple(variables), aux_base)
+    return [list(clause) for clause in clauses_tuple]
 
 
 # ---------------- cryptominisat driver ------------------------------------
@@ -432,7 +459,7 @@ def satSolve(clauses, triple2idx):
         return False
 
     idx2triple = {idx: tpl for tpl, idx in triple2idx.items()}
-    return [idx2triple[i] for i, val in enumerate(solution) if val]
+    return [idx2triple[i] for i, val in enumerate(solution) if val and i in idx2triple]
 
 
 # ---------------- timeout wrapper ----------------------------------------
@@ -514,11 +541,10 @@ def refresh_session(session: Session, now: int) -> Session:
     # 2. Ask SAT solver for a schedule at *now*
     # ------------------------------------------------------------
     solution = sat_search(session, now)
-    print(f"[DEBUG] refresh_session: SAT solution={solution}")
+    print(f"[DEBUG] refresh_session")
     if solution:
-        print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
+        print(f"[DEBUG] refresh_session: Found valid solution")
         new_map = copy.deepcopy(session.cooking_map)
-        print(f"[DEBUG] refresh_session: initial new_map={new_map}")
         
         # Get set of instructions that are already being worked on
         active_instructions = set()
