@@ -35,11 +35,11 @@ def parse_cheesecake_recipe() -> List[Dict]:
     """Parse the cheesecake recipe from CSV format and convert to RECIPE_STORE format."""
     # Keywords that indicate a task doesn't require attention
     no_attention_keywords = ["bake", "preheat", "soften", "put out", "room temp", "cool", "simmer", "refri"]
-    
+
     # Read the CSV file
     recipe_path = os.path.join(os.path.dirname(__file__), "cheesecake2.txt")
     tasks = []
-    
+
     with open(recipe_path, 'r') as f:
         reader = csv.DictReader(f, delimiter=';')
         for row in reader:
@@ -51,7 +51,7 @@ def parse_cheesecake_recipe() -> List[Dict]:
                     'child': int(row['child']) if row['child'] != '-1' else None
                 }
                 tasks.append(task)
-    
+
     # Convert child-to-parent relationships to parent-to-child dependencies
     dependencies = {}
     for task in tasks:
@@ -61,14 +61,14 @@ def parse_cheesecake_recipe() -> List[Dict]:
             if child_idx not in dependencies:
                 dependencies[child_idx] = []
             dependencies[child_idx].append(task['index'])
-    
+
     # Convert to RECIPE_STORE format
     recipe = []
     for task in tasks:
         # Determine if task requires attention based on keywords
         title_lower = task['title'].lower()
         requires_attention = not any(keyword in title_lower for keyword in no_attention_keywords)
-        
+
         # Create the instruction with a single AI
         instruction = {
             "index": task['index'],
@@ -80,7 +80,7 @@ def parse_cheesecake_recipe() -> List[Dict]:
             "dependencies": dependencies.get(task['index'], [])
         }
         recipe.append(instruction)
-    
+
     return recipe
 
 # Add the parsed cheesecake recipe to RECIPE_STORE
@@ -185,4 +185,3 @@ def reset_session():
     global _current_session
     _current_session = None
     return {}
-

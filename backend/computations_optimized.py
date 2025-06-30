@@ -78,7 +78,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
         completed_ais = len(session.done_tasks[inst_index].time_data)
         total_ais = len(session.recipe[inst_index].aiList)
         return completed_ais == total_ais
-    
+
     # Include all instructions that are either not completed OR currently active
     vertices: Set[int] = set()
     for inst in session.recipe:
@@ -88,9 +88,9 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
         for chef_tasks in session.cooking_map.values():
             if inst.index in chef_tasks:
                 vertices.add(inst.index)
-    
+
     print(f"[DEBUG] cooking_graph: vertices={len(vertices)}")
-    
+
     edges: List[Tuple[int, int]] = []
     time_ub = 0
     for inst in session.recipe:
@@ -101,7 +101,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
             for dep in inst.dependencies:
                 if dep in vertices:
                     edges.append((dep, inst.index))
-    
+
     print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={len(edges)}")
     return vertices, edges, time_ub
 
@@ -212,7 +212,7 @@ from pycryptosat import Solver       # noqa: E402
 
 def session2sat_optimized(session: Session, time_ub: int, now: int):
     """Optimized SAT encoding with better clause generation.
-    
+
     Key optimizations:
     1. Use at-most-one encoding instead of pairwise exclusion for attention tasks
     2. Reduce time slots by using larger granularity where possible
@@ -223,8 +223,8 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
-    print(f"[DEBUG] session2sat_optimized: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")
-    print(f"[DEBUG] session2sat_optimized: time_slots={list(time_slots)}, chefs={chefs}...")
+    print(f"[DEBUG] session2sat_optimized: vertex_set={len(vertex_set)}, edges={len(edges)}, time_ub={time_ub}")
+    print(f"[DEBUG] session2sat_optimized: time_slots={len(time_slots)}, chefs={chefs}...")
 
     # ---------------- triple enumeration with filtering ----------------
     # Only create variables for valid time windows
@@ -235,10 +235,13 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
             for t in time_slots:
                 if t + duration <= time_ub:  # Only valid start times
                     triples.append((p, t, v))
-    
+
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
 
     print(f"[DEBUG] session2sat_optimized: reduced triples count: {len(triples)} (vs {len(chefs) * len(vertex_set) * len(time_slots)} unfiltered)")
+
+    # Track auxiliary variables to avoid conflicts
+    aux_var_counter = len(triple2idx) + 1
 
     # ---------------- part 0 · assert current running tasks ----------------
     clauses0 = []
@@ -253,7 +256,7 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     active_instructions = set()
     for chef_tasks in session.cooking_map.values():
         active_instructions.update(chef_tasks.keys())
-    
+
     for inst_idx in active_instructions:
         for chef in chefs:
             triple = (chef, 0, inst_idx)
@@ -263,7 +266,7 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                     if inst_idx in tasks:
                         actual_chef = c
                         break
-                
+
                 if actual_chef and chef != actual_chef:
                     clauses0_5.append([-triple2idx[triple]])
 
@@ -275,10 +278,10 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     # ---------------- part 1 · OPTIMIZED no overlapping attention -------
     # Use at-most-one encoding for better performance
     clauses1: List[List[int]] = []
-    
+
     # Group tasks by whether they have attention requirements
     attention_tasks = [v for v in vertex_set if attention_span(_inst(v))]
-    
+
     # For each chef and time slot, at most one attention task can be active
     for chef in chefs:
         for t in time_slots:
@@ -287,7 +290,7 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
             for v in attention_tasks:
                 spans = attention_span(_inst(v))
                 duration = instruction_cooking_time(_inst(v))
-                
+
                 # Check all possible start times for task v
                 for start_t in range(max(0, t - duration + 1), min(t + 1, time_ub - duration + 1)):
                     # Check if any attention span would be active at time t
@@ -297,11 +300,12 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                             if triple in triple2idx:
                                 active_at_t.append(triple2idx[triple])
                                 break
-            
-            # Use sequential encoding for at-most-one constraint
+
+            # Use simple pairwise encoding for at-most-one constraint
             if len(active_at_t) > 1:
-                clauses_tuple = _at_most_one_sequential(tuple(active_at_t))
-                clauses1.extend([list(clause) for clause in clauses_tuple])
+                for i in range(len(active_at_t)):
+                    for j in range(i + 1, len(active_at_t)):
+                        clauses1.append([-active_at_t[i], -active_at_t[j]])  # NOT (i AND j)
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
@@ -317,15 +321,34 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
         if clause:  # Only add if there are valid assignments
             clauses2.append(clause)
 
-    # ---------------- part 3 · every task at most once (OPTIMIZED) -----
+    # ---------------- part 2.5 · prefer parallel execution ----------------
+    # Add soft constraints to encourage both chefs to work at time 0
+    # This helps avoid solutions where one chef does everything sequentially
+    if len(chefs) > 1:
+        chef_time_0_options = {}
+        for chef in chefs:
+            chef_time_0_options[chef] = [
+                triple2idx[(chef, 0, v)] for v in vertex_set
+                if (chef, 0, v) in triple2idx
+            ]
+
+        # If multiple chefs have options at time 0, encourage parallel execution
+        all_have_options = all(len(options) > 0 for options in chef_time_0_options.values())
+        if all_have_options:
+            # Add constraints that each chef should work at time 0
+            for chef, options in chef_time_0_options.items():
+                if options:
+                    clauses2.append(options)  # At least one option for this chef at time 0
+
+    # ---------------- part 3 · every task at most once (SIMPLE PAIRWISE) -----
     clauses3: List[List[int]] = []
     for v in vertex_set:
-        vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots 
+        vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots
                   if (c, t, v) in triple2idx]
-        if len(vars_v) > 1:
-            # Use sequential encoding instead of pairwise
-            clauses_tuple = _at_most_one_sequential(tuple(vars_v))
-            clauses3.extend([list(clause) for clause in clauses_tuple])
+        # Use simple pairwise encoding for now to avoid auxiliary variable conflicts
+        for i in range(len(vars_v)):
+            for j in range(i + 1, len(vars_v)):
+                clauses3.append([-vars_v[i], -vars_v[j]])  # NOT (i AND j)
 
     # ---------------- part 4 · dependency order ----------------------------
     clauses4: List[List[int]] = []
@@ -344,40 +367,46 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                             clauses4.append([-triple2idx[(chef1, t_dep, dep)], -triple2idx[(chef2, t_dst, dst)]])
 
     all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4
-    
+
     print(f"[DEBUG] Clause counts - part0: {len(clauses0)}, part0.5: {len(clauses0_5)}, "
           f"part1: {len(clauses1)}, part2: {len(clauses2)}, part3: {len(clauses3)}, part4: {len(clauses4)}")
-    
+
     return triple2idx, all_clauses
 
 
-@lru_cache(maxsize=1000)
-def _at_most_one_sequential(variables: tuple) -> tuple:
+def _at_most_one_sequential_fixed(variables: tuple, aux_base: int) -> tuple:
     """Generate clauses for at-most-one constraint using sequential encoding.
-    
+
     This is more efficient than pairwise encoding for large sets.
     Uses O(3n) clauses instead of O(n²) clauses.
+
+    Args:
+        variables: Tuple of variable IDs to constrain
+        aux_base: Starting ID for auxiliary variables to avoid conflicts
+
+    Returns:
+        Tuple of (clauses, next_aux_base)
     """
     # Convert tuple back to list for processing
     vars_list = list(variables)
-    
+
     if len(vars_list) <= 1:
-        return tuple()
-    
+        return tuple(), aux_base
+
     if len(vars_list) == 2:
         # For 2 variables, pairwise is optimal
-        return ((-vars_list[0], -vars_list[1]),)
-    
+        return ((-vars_list[0], -vars_list[1]),), aux_base
+
     # Sequential encoding with auxiliary variables
     # We need len(variables) - 1 auxiliary variables
-    aux_base = max(vars_list) + 1
     aux_vars = list(range(aux_base, aux_base + len(vars_list) - 1))
-    
+    next_aux_base = aux_base + len(vars_list) - 1
+
     clauses = []
-    
+
     # First variable implies first aux
     clauses.append((-vars_list[0], aux_vars[0]))
-    
+
     # Middle variables
     for i in range(1, len(vars_list) - 1):
         # If variable i is true, then aux[i] is true
@@ -386,10 +415,54 @@ def _at_most_one_sequential(variables: tuple) -> tuple:
         clauses.append((-aux_vars[i-1], -vars_list[i]))
         # If aux[i-1] is false and variable i is false, then aux[i] is false
         clauses.append((aux_vars[i-1], vars_list[i], -aux_vars[i]))
-    
+
     # Last variable
     clauses.append((-aux_vars[-1], -vars_list[-1]))
-    
+
+    return tuple(clauses), next_aux_base
+
+@lru_cache(maxsize=1000)
+def _at_most_one_sequential(variables: tuple) -> tuple:
+    """Generate clauses for at-most-one constraint using sequential encoding.
+
+    This is more efficient than pairwise encoding for large sets.
+    Uses O(3n) clauses instead of O(n²) clauses.
+
+    WARNING: This version has a bug with auxiliary variable conflicts.
+    Use _at_most_one_sequential_fixed instead.
+    """
+    # Convert tuple back to list for processing
+    vars_list = list(variables)
+
+    if len(vars_list) <= 1:
+        return tuple()
+
+    if len(vars_list) == 2:
+        # For 2 variables, pairwise is optimal
+        return ((-vars_list[0], -vars_list[1]),)
+
+    # Sequential encoding with auxiliary variables
+    # We need len(variables) - 1 auxiliary variables
+    aux_base = max(vars_list) + 1
+    aux_vars = list(range(aux_base, aux_base + len(vars_list) - 1))
+
+    clauses = []
+
+    # First variable implies first aux
+    clauses.append((-vars_list[0], aux_vars[0]))
+
+    # Middle variables
+    for i in range(1, len(vars_list) - 1):
+        # If variable i is true, then aux[i] is true
+        clauses.append((-vars_list[i], aux_vars[i]))
+        # If aux[i-1] is true, then variable i is false
+        clauses.append((-aux_vars[i-1], -vars_list[i]))
+        # If aux[i-1] is false and variable i is false, then aux[i] is false
+        clauses.append((aux_vars[i-1], vars_list[i], -aux_vars[i]))
+
+    # Last variable
+    clauses.append((-aux_vars[-1], -vars_list[-1]))
+
     return tuple(clauses)
 
 
@@ -497,16 +570,16 @@ def refresh_session(session: Session, now: int, use_optimized: bool = True) -> S
         print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
         new_map = copy.deepcopy(session.cooking_map)
         print(f"[DEBUG] refresh_session: initial new_map={new_map}")
-        
+
         # Get set of instructions that are already being worked on
         active_instructions = set()
         for chef_tasks in new_map.values():
             active_instructions.update(chef_tasks.keys())
         print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
-        
+
         # Track if we actually made any new assignments
         made_new_assignments = False
-        
+
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
             print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
@@ -524,7 +597,7 @@ def refresh_session(session: Session, now: int, use_optimized: bool = True) -> S
                     print(f"[DEBUG] refresh_session: updated new_map={new_map}")
                 else:
                     print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
-        
+
         # Only update the session if we actually made new assignments
         if made_new_assignments:
             return replace(session, cooking_map=new_map)
