@@ -89,7 +89,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
             if inst.index in chef_tasks:
                 vertices.add(inst.index)
 
-    print(f"[DEBUG] cooking_graph: vertices={len(vertices)}")
+    # print(f"[DEBUG] cooking_graph: vertices={len(vertices)}")
 
     edges: List[Tuple[int, int]] = []
     time_ub = 0
@@ -97,12 +97,12 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
         if inst.index in vertices:
             inst_time = instruction_cooking_time(inst)
             time_ub += inst_time
-            print(f"[DEBUG] cooking_graph: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
+            # print(f"[DEBUG] cooking_graph: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
             for dep in inst.dependencies:
                 if dep in vertices:
                     edges.append((dep, inst.index))
 
-    print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={len(edges)}")
+    # print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={len(edges)}")
     return vertices, edges, time_ub
 
 # ---------------------------------------------------------------------------
@@ -159,13 +159,13 @@ def recipe_active_part(session: Session, now: int) -> Dict[int, CookingInstructi
 # ---------------------------------------------------------------------------
 
 def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Session:
-    print(f"[DEBUG] active_ai_done: chef={chef}, inst_index={inst_index}, now={now}")
+    # print(f"[DEBUG] active_ai_done: chef={chef}, inst_index={inst_index}, now={now})")
     if chef not in session.cooking_map or inst_index not in session.cooking_map[chef]:
         raise KeyError("No such active task for chef")
 
     task = session.cooking_map[chef][inst_index]
     ai_idx = task.ai_index
-    print(f"[DEBUG] active_ai_done: current ai_idx={ai_idx}, total AIs={len(session.recipe[inst_index].aiList)}")
+    # print(f"[DEBUG] active_ai_done: current ai_idx={ai_idx}, total AIs={len(session.recipe[inst_index].aiList)}")
 
     # Ensure task.start_time is not None before using it
     if task.start_time is None:
@@ -182,10 +182,10 @@ def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Se
     # rebuild cooking_map
     new_map = copy.deepcopy(session.cooking_map)
     if ai_idx + 1 < len(session.recipe[inst_index].aiList):
-        print(f"[DEBUG] active_ai_done: advancing to next AI (ai_idx + 1 = {ai_idx + 1})")
+        # print(f"[DEBUG] active_ai_done: advancing to next AI (ai_idx + 1 = {ai_idx + 1})")
         new_map[chef][inst_index] = ActiveTask(inst_index, ai_idx + 1, now)
     else:
-        print(f"[DEBUG] active_ai_done: instruction completed, removing from cooking_map")
+        # print(f"[DEBUG] active_ai_done: instruction completed, removing from cooking_map")
         del new_map[chef][inst_index]
         if not new_map[chef]:
             del new_map[chef]
@@ -215,55 +215,70 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
 
     Key optimizations:
     1. Use at-most-one encoding instead of pairwise exclusion for attention tasks
-    2. Reduce time slots by using larger granularity where possible
-    3. Pre-filter impossible assignments
-    4. Use adaptive time granularity based on task lengths
+    2. Pre-filter impossible assignments
+    3. REMOVED: Time granularity optimization (was causing non-monotonic behavior)
     """
 
     vertex_set, edges, _ = cooking_graph(session)
     chefs      = list(session.chefs_data)
 
-    # ========== TIME GRANULARITY OPTIMIZATION ==========
-    # Instead of unit time slots, use adaptive granularity
+    # ========== USE UNIT TIME SLOTS ==========
+    # Use unit time slots to preserve monotonicity
+    time_slots = range(time_ub)
+    
+    # Helper to fetch potentially shortened instruction
     active_recipe = recipe_active_part(session, now)
     def _inst(idx: int):
         return active_recipe.get(idx, session.recipe[idx])
-    
-    # Use aggressive time granularity to dramatically reduce problem size
-    # Instead of GCD, use a fixed granularity that makes sense for cooking tasks
-    all_durations = [instruction_cooking_time(_inst(v)) for v in vertex_set]
-    avg_duration = sum(all_durations) / len(all_durations) if all_durations else 1
-    
-    # Use larger granularity for problems with many long tasks
-    if avg_duration > 20:
-        time_granularity = 5  # 5-second granularity for long tasks
-    elif avg_duration > 10:
-        time_granularity = 3  # 3-second granularity for medium tasks  
-    else:
-        time_granularity = 2  # 2-second granularity for short tasks
-    
-    # Reduce time_ub and create coarser time slots
-    coarse_time_ub = (time_ub + time_granularity - 1) // time_granularity
-    time_slots = range(coarse_time_ub)
 
-    print(f"[DEBUG] session2sat_optimized: vertex_set={len(vertex_set)}, edges={len(edges)}, time_ub={time_ub}")
-    print(f"[DEBUG] session2sat_optimized: time_granularity={time_granularity}, coarse_time_ub={coarse_time_ub}")
-    print(f"[DEBUG] session2sat_optimized: time_slots={len(time_slots)}, chefs={chefs}...")
+    # print(f"[DEBUG] session2sat_optimized: vertex_set={len(vertex_set)}, edges={len(edges)}, time_ub={time_ub}")
+    # print(f"[DEBUG] session2sat_optimized: time_slots={len(time_slots)}, chefs={chefs}...")
 
-    # ---------------- triple enumeration with filtering ----------------
-    # Only create variables for valid time windows (using coarse granularity)
+    # ---------------- Calculate critical paths for all tasks ----------------
+    # This prevents including tasks that cannot possibly complete within time_ub
+    def calculate_earliest_start(task_id, memo=None):
+        if memo is None:
+            memo = {}
+        if task_id in memo:
+            return memo[task_id]
+        
+        task = session.recipe[task_id]
+        max_dep_end = 0
+        
+        for dep_id in task.dependencies:
+            if dep_id in vertex_set:  # Only consider active tasks
+                dep_start = calculate_earliest_start(dep_id, memo)
+                dep_duration = instruction_cooking_time(_inst(dep_id))
+                dep_end = dep_start + dep_duration
+                max_dep_end = max(max_dep_end, dep_end)
+        
+        memo[task_id] = max_dep_end
+        return max_dep_end
+    
+    # Calculate earliest completion time for each task
+    task_earliest_completion = {}
+    for v in vertex_set:
+        earliest_start = calculate_earliest_start(v)
+        duration = instruction_cooking_time(_inst(v))
+        task_earliest_completion[v] = earliest_start + duration
+    
+    # ---------------- triple enumeration with critical path filtering ----------------
+    # Only create variables for tasks that can actually complete within time_ub
     triples = []
     for p in chefs:
         for v in vertex_set:
-            duration = instruction_cooking_time(_inst(v))
-            coarse_duration = (duration + time_granularity - 1) // time_granularity  # Round up
-            for t in time_slots:
-                if t + coarse_duration <= coarse_time_ub:  # Only valid start times
-                    triples.append((p, t, v))
+            # Check if this task can possibly complete within time_ub
+            if task_earliest_completion[v] <= time_ub:
+                duration = instruction_cooking_time(_inst(v))
+                earliest_start = task_earliest_completion[v] - duration
+                for t in time_slots:
+                    # Task can only start after its dependencies are ready
+                    if t >= earliest_start and t + duration <= time_ub:
+                        triples.append((p, t, v))
 
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
 
-    print(f"[DEBUG] session2sat_optimized: reduced triples count: {len(triples)} (vs {len(chefs) * len(vertex_set) * len(time_slots)} unfiltered)")
+    # print(f"[DEBUG] session2sat_optimized: triples count: {len(triples)}")
 
     # Track auxiliary variables to avoid conflicts
     aux_var_counter = len(triple2idx) + 1
@@ -310,21 +325,17 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     # For each chef and time slot, at most one attention task can be active
     for chef in chefs:
         for t in time_slots:
-            # Find all attention tasks that could be active at time t (coarse)
+            # Find all attention tasks that could be active at time t (unit time)
             active_at_t = []
             for v in attention_tasks:
                 spans = attention_span(_inst(v))
                 duration = instruction_cooking_time(_inst(v))
-                coarse_duration = (duration + time_granularity - 1) // time_granularity
 
-                # Check all possible start times for task v (in coarse granularity)
-                for start_t in range(max(0, t - coarse_duration + 1), min(t + 1, coarse_time_ub - coarse_duration + 1)):
+                # Check all possible start times for task v (unit time)
+                for start_t in range(max(0, t - duration + 1), min(t + 1, time_ub - duration + 1)):
                     # Check if any attention span would be active at time t
-                    # Convert spans to coarse granularity
                     for span_start, span_end in spans:
-                        coarse_span_start = span_start // time_granularity
-                        coarse_span_end = (span_end + time_granularity - 1) // time_granularity
-                        if start_t + coarse_span_start <= t < start_t + coarse_span_end:
+                        if start_t + span_start <= t < start_t + span_end:
                             triple = (chef, start_t, v)
                             if triple in triple2idx:
                                 active_at_t.append(triple2idx[triple])
@@ -345,10 +356,9 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     for v in vertex_set:
         clause: List[int] = []
         dur = instruction_cooking_time(_inst(v))
-        coarse_dur = (dur + time_granularity - 1) // time_granularity
         for chef in chefs:
             for t in time_slots:
-                if t + coarse_dur <= coarse_time_ub:
+                if t + dur <= time_ub:
                     triple = (chef, t, v)
                     if triple in triple2idx:
                         clause.append(triple2idx[triple])
@@ -409,7 +419,6 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                 # This task assignment is only valid if all dependencies are finished
                 for dep in dep_list:
                     dur_dep = instruction_cooking_time(_inst(dep))
-                    coarse_dur_dep = (dur_dep + time_granularity - 1) // time_granularity
                     
                     # Find all dependency assignments that would conflict
                     conflicting_assignments = []
@@ -417,9 +426,9 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                         for t_dep in time_slots:
                             if (chef_dep, t_dep, dep) not in triple2idx:
                                 continue
-                            # If dep starts at t_dep (coarse), it finishes at t_dep + coarse_dur_dep
+                            # If dep starts at t_dep, it finishes at t_dep + dur_dep
                             # This conflicts if it finishes after t_dst (when dst wants to start)
-                            if t_dep + coarse_dur_dep > t_dst:
+                            if t_dep + dur_dep > t_dst:
                                 conflicting_assignments.append(triple2idx[(chef_dep, t_dep, dep)])
                     
                     # Add constraint: if dst starts at t_dst, none of the conflicting dep assignments can be true
@@ -451,8 +460,8 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
 
     all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4 + clauses5
 
-    print(f"[DEBUG] Clause counts - part0: {len(clauses0)}, part0.5: {len(clauses0_5)}, "
-          f"part1: {len(clauses1)}, part2: {len(clauses2)}, part3: {len(clauses3)}, part4: {len(clauses4)}, part5: {len(clauses5)}")
+    # print(f"[DEBUG] Clause counts - part0: {len(clauses0)}, part0.5: {len(clauses0_5)}, "
+    #       f"part1: {len(clauses1)}, part2: {len(clauses2)}, part3: {len(clauses3)}, part4: {len(clauses4)}, part5: {len(clauses5)}")
 
     return triple2idx, all_clauses
 
@@ -639,55 +648,57 @@ def refresh_session(session: Session, now: int, use_optimized: bool = True) -> S
     eligible_chefs = {
         c for c in session.chefs_data if not _chef_needs_attention(session, c)
     }
-    print(f"[DEBUG] refresh_session: now={now}, eligible_chefs={eligible_chefs}")
+    # print(f"[DEBUG] refresh_session: now={now}, eligible_chefs={eligible_chefs}")
     if not eligible_chefs:
-        print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
+        # print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
         return session
 
     # ------------------------------------------------------------
     # 2. Ask SAT solver for a schedule at *now*
     # ------------------------------------------------------------
     solution = sat_search(session, now, use_optimized=use_optimized)
-    print(f"[DEBUG] refresh_session: SAT solution={solution}")
+    # print(f"[DEBUG] refresh_session: SAT solution={solution}")
     if solution:
-        print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
+        # print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
         new_map = copy.deepcopy(session.cooking_map)
-        print(f"[DEBUG] refresh_session: initial new_map={new_map}")
+        # print(f"[DEBUG] refresh_session: initial new_map={new_map}")
 
         # Get set of instructions that are already being worked on
         active_instructions = set()
         for chef_tasks in new_map.values():
             active_instructions.update(chef_tasks.keys())
-        print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
+        # print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
 
         # Track if we actually made any new assignments
         made_new_assignments = False
 
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
-            print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
+            # print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
             if starts:
                 inst_idx = starts[0][2]
                 # Only assign if this instruction is not already being worked on
                 if inst_idx not in active_instructions:
-                    print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
+                    # print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
                     if chef not in new_map:
                         new_map[chef] = {}
                     new_map[chef][inst_idx] = ActiveTask(
                         inst_idx, 0, now
                     )
                     made_new_assignments = True
-                    print(f"[DEBUG] refresh_session: updated new_map={new_map}")
+                    # print(f"[DEBUG] refresh_session: updated new_map={new_map}")
                 else:
-                    print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
+                    # print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
+                    pass
 
         # Only update the session if we actually made new assignments
         if made_new_assignments:
             return replace(session, cooking_map=new_map)
         else:
-            print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
+            # print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
             return session
     else:
-        print(f"[DEBUG] refresh_session: No SAT solution found")
+        # print(f"[DEBUG] refresh_session: No SAT solution found")
+        pass
 
     return session
