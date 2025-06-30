@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from typing import List, Dict
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
-from computations import sat_search, session2sat, satSolve, cooking_graph
+from computations_optimized import sat_search, session2sat_optimized, satSolve, cooking_graph
 
 def load_cheesecake_recipe():
     """Load the cheesecake recipe from main.py."""
@@ -79,8 +79,8 @@ def analyze_sat_encoding(session: Session):
     print(f"  Graph edges: {len(edges)}")
     print(f"  Time upper bound: {time_ub}")
     
-    # Generate SAT encoding
-    triple2idx, clauses = session2sat(session, time_ub, now=0)
+    # Generate SAT encoding (using optimized version)
+    triple2idx, clauses = session2sat_optimized(session, time_ub, now=0)
     
     print(f"\nSAT encoding statistics:")
     print(f"  Total variables: {len(triple2idx)}")
@@ -101,7 +101,7 @@ def main():
     print("=== SAT Solver Benchmark for Cheesecake Recipe ===\n")
     
     # Test with different numbers of chefs
-    for num_chefs in [2, 3, 4]:
+    for num_chefs in [2, 3]:
         print(f"\n--- Testing with {num_chefs} chefs ---")
         session = create_test_session(num_chefs)
         

@@ -217,23 +217,48 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     1. Use at-most-one encoding instead of pairwise exclusion for attention tasks
     2. Reduce time slots by using larger granularity where possible
     3. Pre-filter impossible assignments
+    4. Use adaptive time granularity based on task lengths
     """
 
     vertex_set, edges, _ = cooking_graph(session)
-    time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
+    # ========== TIME GRANULARITY OPTIMIZATION ==========
+    # Instead of unit time slots, use adaptive granularity
+    active_recipe = recipe_active_part(session, now)
+    def _inst(idx: int):
+        return active_recipe.get(idx, session.recipe[idx])
+    
+    # Use aggressive time granularity to dramatically reduce problem size
+    # Instead of GCD, use a fixed granularity that makes sense for cooking tasks
+    all_durations = [instruction_cooking_time(_inst(v)) for v in vertex_set]
+    avg_duration = sum(all_durations) / len(all_durations) if all_durations else 1
+    
+    # Use larger granularity for problems with many long tasks
+    if avg_duration > 20:
+        time_granularity = 5  # 5-second granularity for long tasks
+    elif avg_duration > 10:
+        time_granularity = 3  # 3-second granularity for medium tasks  
+    else:
+        time_granularity = 2  # 2-second granularity for short tasks
+    
+    # Reduce time_ub and create coarser time slots
+    coarse_time_ub = (time_ub + time_granularity - 1) // time_granularity
+    time_slots = range(coarse_time_ub)
+
     print(f"[DEBUG] session2sat_optimized: vertex_set={len(vertex_set)}, edges={len(edges)}, time_ub={time_ub}")
+    print(f"[DEBUG] session2sat_optimized: time_granularity={time_granularity}, coarse_time_ub={coarse_time_ub}")
     print(f"[DEBUG] session2sat_optimized: time_slots={len(time_slots)}, chefs={chefs}...")
 
     # ---------------- triple enumeration with filtering ----------------
-    # Only create variables for valid time windows
+    # Only create variables for valid time windows (using coarse granularity)
     triples = []
     for p in chefs:
         for v in vertex_set:
-            duration = instruction_cooking_time(session.recipe[v] if v not in recipe_active_part(session, now) else recipe_active_part(session, now)[v])
+            duration = instruction_cooking_time(_inst(v))
+            coarse_duration = (duration + time_granularity - 1) // time_granularity  # Round up
             for t in time_slots:
-                if t + duration <= time_ub:  # Only valid start times
+                if t + coarse_duration <= coarse_time_ub:  # Only valid start times
                     triples.append((p, t, v))
 
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
@@ -285,24 +310,32 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     # For each chef and time slot, at most one attention task can be active
     for chef in chefs:
         for t in time_slots:
-            # Find all attention tasks that could be active at time t
+            # Find all attention tasks that could be active at time t (coarse)
             active_at_t = []
             for v in attention_tasks:
                 spans = attention_span(_inst(v))
                 duration = instruction_cooking_time(_inst(v))
+                coarse_duration = (duration + time_granularity - 1) // time_granularity
 
-                # Check all possible start times for task v
-                for start_t in range(max(0, t - duration + 1), min(t + 1, time_ub - duration + 1)):
+                # Check all possible start times for task v (in coarse granularity)
+                for start_t in range(max(0, t - coarse_duration + 1), min(t + 1, coarse_time_ub - coarse_duration + 1)):
                     # Check if any attention span would be active at time t
+                    # Convert spans to coarse granularity
                     for span_start, span_end in spans:
-                        if start_t + span_start <= t < start_t + span_end:
+                        coarse_span_start = span_start // time_granularity
+                        coarse_span_end = (span_end + time_granularity - 1) // time_granularity
+                        if start_t + coarse_span_start <= t < start_t + coarse_span_end:
                             triple = (chef, start_t, v)
                             if triple in triple2idx:
                                 active_at_t.append(triple2idx[triple])
                                 break
 
-            # Use simple pairwise encoding for at-most-one constraint
-            if len(active_at_t) > 1:
+            # Use sequential encoding for at-most-one constraint when many variables
+            if len(active_at_t) > 3:
+                seq_clauses, aux_var_counter = _at_most_one_sequential_fixed(tuple(active_at_t), aux_var_counter)
+                clauses1.extend([list(clause) for clause in seq_clauses])
+            elif len(active_at_t) > 1:
+                # Use pairwise for small sets
                 for i in range(len(active_at_t)):
                     for j in range(i + 1, len(active_at_t)):
                         clauses1.append([-active_at_t[i], -active_at_t[j]])  # NOT (i AND j)
@@ -312,9 +345,10 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
     for v in vertex_set:
         clause: List[int] = []
         dur = instruction_cooking_time(_inst(v))
+        coarse_dur = (dur + time_granularity - 1) // time_granularity
         for chef in chefs:
             for t in time_slots:
-                if t + dur <= time_ub:
+                if t + coarse_dur <= coarse_time_ub:
                     triple = (chef, t, v)
                     if triple in triple2idx:
                         clause.append(triple2idx[triple])
@@ -340,36 +374,85 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                 if options:
                     clauses2.append(options)  # At least one option for this chef at time 0
 
-    # ---------------- part 3 · every task at most once (SIMPLE PAIRWISE) -----
+    # ---------------- part 3 · every task at most once (OPTIMIZED) -----
     clauses3: List[List[int]] = []
     for v in vertex_set:
         vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots
                   if (c, t, v) in triple2idx]
-        # Use simple pairwise encoding for now to avoid auxiliary variable conflicts
-        for i in range(len(vars_v)):
-            for j in range(i + 1, len(vars_v)):
-                clauses3.append([-vars_v[i], -vars_v[j]])  # NOT (i AND j)
+        # Use sequential encoding for larger sets, pairwise for smaller ones
+        if len(vars_v) > 3:
+            seq_clauses, aux_var_counter = _at_most_one_sequential_fixed(tuple(vars_v), aux_var_counter)
+            clauses3.extend([list(clause) for clause in seq_clauses])
+        elif len(vars_v) > 1:
+            # Use pairwise for small sets
+            for i in range(len(vars_v)):
+                for j in range(i + 1, len(vars_v)):
+                    clauses3.append([-vars_v[i], -vars_v[j]])  # NOT (i AND j)
 
-    # ---------------- part 4 · dependency order ----------------------------
+    # ---------------- part 4 · dependency order (HIGHLY OPTIMIZED) --------
     clauses4: List[List[int]] = []
-    for dep, dst in edges:  # dep must finish before dst starts
-        dur_dep = instruction_cooking_time(_inst(dep))
-        for chef1 in chefs:
-            for chef2 in chefs:
-                for t_dep in time_slots:
-                    if (chef1, t_dep, dep) not in triple2idx:
-                        continue
-                    for t_dst in time_slots:
-                        if (chef2, t_dst, dst) not in triple2idx:
-                            continue
-                        # dst cannot start before dep finishes
-                        if t_dst < t_dep + dur_dep:
-                            clauses4.append([-triple2idx[(chef1, t_dep, dep)], -triple2idx[(chef2, t_dst, dst)]])
+    
+    # Group dependencies by destination to reduce redundant checks
+    deps_by_dst = {}
+    for dep, dst in edges:
+        if dst not in deps_by_dst:
+            deps_by_dst[dst] = []
+        deps_by_dst[dst].append(dep)
+    
+    for dst, dep_list in deps_by_dst.items():
+        # For each destination task, ensure it starts after ALL its dependencies finish
+        for chef_dst in chefs:
+            for t_dst in time_slots:
+                if (chef_dst, t_dst, dst) not in triple2idx:
+                    continue
+                
+                # This task assignment is only valid if all dependencies are finished
+                for dep in dep_list:
+                    dur_dep = instruction_cooking_time(_inst(dep))
+                    coarse_dur_dep = (dur_dep + time_granularity - 1) // time_granularity
+                    
+                    # Find all dependency assignments that would conflict
+                    conflicting_assignments = []
+                    for chef_dep in chefs:
+                        for t_dep in time_slots:
+                            if (chef_dep, t_dep, dep) not in triple2idx:
+                                continue
+                            # If dep starts at t_dep (coarse), it finishes at t_dep + coarse_dur_dep
+                            # This conflicts if it finishes after t_dst (when dst wants to start)
+                            if t_dep + coarse_dur_dep > t_dst:
+                                conflicting_assignments.append(triple2idx[(chef_dep, t_dep, dep)])
+                    
+                    # Add constraint: if dst starts at t_dst, none of the conflicting dep assignments can be true
+                    for conflict_var in conflicting_assignments:
+                        clauses4.append([-triple2idx[(chef_dst, t_dst, dst)], -conflict_var])
 
-    all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4
+    # ---------------- part 5 · symmetry breaking ---------------------------
+    clauses5: List[List[int]] = []
+    if len(chefs) > 1:
+        # Lexicographic ordering: Chef1 should start work before or at same time as Chef2
+        # For each pair of adjacent chefs, first chef should be assigned to lexicographically smaller task
+        for chef_idx in range(len(chefs) - 1):
+            chef1, chef2 = chefs[chef_idx], chefs[chef_idx + 1]
+            
+            # Find the smallest vertex that could be assigned at time 0
+            min_vertex_at_t0 = None
+            for v in sorted(vertex_set):
+                if (chef1, 0, v) in triple2idx and (chef2, 0, v) in triple2idx:
+                    min_vertex_at_t0 = v
+                    break
+            
+            if min_vertex_at_t0 is not None:
+                # If chef2 gets the smallest task at t=0, then chef1 must also get some task at t=0
+                chef1_t0_options = [triple2idx[(chef1, 0, v)] for v in vertex_set if (chef1, 0, v) in triple2idx]
+                if chef1_t0_options:
+                    # If chef2 takes min vertex at t=0, chef1 must take something at t=0
+                    clause = [-triple2idx[(chef2, 0, min_vertex_at_t0)]] + chef1_t0_options
+                    clauses5.append(clause)
+
+    all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4 + clauses5
 
     print(f"[DEBUG] Clause counts - part0: {len(clauses0)}, part0.5: {len(clauses0_5)}, "
-          f"part1: {len(clauses1)}, part2: {len(clauses2)}, part3: {len(clauses3)}, part4: {len(clauses4)}")
+          f"part1: {len(clauses1)}, part2: {len(clauses2)}, part3: {len(clauses3)}, part4: {len(clauses4)}, part5: {len(clauses5)}")
 
     return triple2idx, all_clauses
 
