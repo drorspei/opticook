@@ -8,7 +8,7 @@ import os
 import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
-from computations_optimized import active_ai_done, refresh_session
+from computations_seconds import active_ai_done, refresh_session
 
 app = FastAPI()
 
@@ -163,13 +163,13 @@ def start_session(payload: StartPayload):
     raw_recipe = RECIPE_STORE.get(payload.recipe_id)
     if raw_recipe is None:
         raise HTTPException(status_code=404, detail="Unknown recipe_id")
-    # Build CookingInstruction list with quanta durations
+    # Build CookingInstruction list with durations in seconds
     cis: List[CookingInstruction] = []
     for item in raw_recipe:
         ais = [
             AtomicInstruction(
                 ai["attention"],
-                time_in_units(ai["duration_seconds"]),
+                ai["duration_seconds"],  # Keep in seconds
                 ai["description"],
             )
             for ai in item["aiList"]
@@ -188,12 +188,9 @@ def mark_done(payload: DonePayload):
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
     print(f"[DEBUG] mark_done API: chef={payload.chef}, instruction_index={payload.instruction_index}, timestamp_seconds={payload.timestamp_seconds}")
-    # Convert client timestamp to quanta
-    now_quanta = time_in_units(payload.timestamp_seconds)
-    print(f"[DEBUG] mark_done API: now_quanta={now_quanta}")
     try:
         new_session = active_ai_done(
-            _current_session, payload.chef, payload.instruction_index, now_quanta
+            _current_session, payload.chef, payload.instruction_index, payload.timestamp_seconds
         )
         print(f"[DEBUG] mark_done API: session updated successfully")
         _current_session = new_session
@@ -211,9 +208,7 @@ def refresh(payload: RefreshPayload):
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
     print(f"[DEBUG] refresh API: timestamp_seconds={payload.timestamp_seconds}")
-    now_quanta = time_in_units(payload.timestamp_seconds)
-    print(f"[DEBUG] refresh API: now_quanta={now_quanta}")
-    _current_session = refresh_session(_current_session, now_quanta)
+    _current_session = refresh_session(_current_session, payload.timestamp_seconds)
     return asdict(_current_session)
 
 @app.get("/api/v1/session/current/state")

@@ -11,8 +11,8 @@ export function unitsToSeconds(quanta: number): number {
   return quanta * COOKING_TIME_UNIT;
 }
 
-export function formatDuration(quanta: number): string {
-  const seconds = unitsToSeconds(quanta);
+export function formatDuration(seconds: number): string {
+  // Now expects seconds directly, not quanta
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   
@@ -22,8 +22,8 @@ export function formatDuration(quanta: number): string {
   return `${minutes}m ${remainingSeconds}s`;
 }
 
-export function formatTime(quanta: number): string {
-  const seconds = unitsToSeconds(quanta);
+export function formatTime(seconds: number): string {
+  // Now expects seconds directly, not quanta
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;

@@ -10,13 +10,12 @@ import {
   getTotalRecipeTime, 
   getCompletedRecipeTime, 
   formatDuration,
-  formatTime,
-  timeInUnits
+  formatTime
 } from './utils';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [currentTime, setCurrentTime] = useState<number>(Math.floor(Date.now() / 1000));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [sessionStartTime, setSessionStartTime] = useState<number>(0);
@@ -24,13 +23,11 @@ function App() {
   
   // Timer for updating current time
   useEffect(() => {
-    if (session) {
-      const interval = setInterval(() => {
-        setCurrentTime(Math.floor(Date.now() / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [session]);
+    const interval = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Auto-refresh session state
   useEffect(() => {
@@ -104,7 +101,7 @@ function App() {
   };
   
   const handleSessionStarted = () => {
-    setSessionStartTime(currentTime);
+    setSessionStartTime(Math.floor(Date.now() / 1000));
     setShowAddRecipe(false);
     // Load initial session state
     loadSessionState();
@@ -178,7 +175,7 @@ function App() {
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Clock className="w-4 h-4" />
-                <span>Session Time: {formatTime(timeInUnits(elapsedTime))}</span>
+                <span>Session Time: {formatTime(elapsedTime)}</span>
               </div>
               
               <button

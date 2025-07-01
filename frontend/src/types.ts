@@ -7,7 +7,7 @@ export interface Chef {
 
 export interface AtomicInstruction {
   attention: boolean;
-  duration: number; // in quanta (30-second units)
+  duration: number; // in seconds (original recipe time)
   description: string;
 }
 

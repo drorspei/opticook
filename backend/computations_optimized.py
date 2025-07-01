@@ -366,9 +366,9 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
             clauses2.append(clause)
 
     # ---------------- part 2.5 · prefer parallel execution ----------------
-    # Add soft constraints to encourage both chefs to work at time 0
-    # This helps avoid solutions where one chef does everything sequentially
-    if len(chefs) > 1:
+    # Add soft constraints to encourage parallel execution when beneficial
+    # Only when there are multiple tasks available and multiple chefs
+    if len(chefs) > 1 and len(vertex_set) > 1:
         chef_time_0_options = {}
         for chef in chefs:
             chef_time_0_options[chef] = [
@@ -376,12 +376,13 @@ def session2sat_optimized(session: Session, time_ub: int, now: int):
                 if (chef, 0, v) in triple2idx
             ]
 
-        # If multiple chefs have options at time 0, encourage parallel execution
-        all_have_options = all(len(options) > 0 for options in chef_time_0_options.values())
-        if all_have_options:
+        # Only encourage parallel execution if each chef has multiple task options
+        # This prevents forcing multiple chefs to work on the same single task
+        all_have_multiple_options = all(len(options) > 1 for options in chef_time_0_options.values())
+        if all_have_multiple_options:
             # Add constraints that each chef should work at time 0
             for chef, options in chef_time_0_options.items():
-                if options:
+                if len(options) > 1:  # Only if chef has choices
                     clauses2.append(options)  # At least one option for this chef at time 0
 
     # ---------------- part 3 · every task at most once (OPTIMIZED) -----

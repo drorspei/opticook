@@ -18,7 +18,7 @@ class Chef:  # information about a chef
 @dataclass(frozen=True)
 class AtomicInstruction:  # aka "ai"
     attention: bool
-    duration: int  # quanta of COOKING_TIME_UNIT (30s)
+    duration: int  # seconds (original recipe time for display, converted to quanta for SAT)
     description: str
 
 @dataclass(frozen=True)
