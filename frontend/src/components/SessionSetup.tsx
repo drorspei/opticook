@@ -13,11 +13,11 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
   const [chefNames, setChefNames] = useState<string[]>(['Alice', 'Bob']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  
+
   useEffect(() => {
     loadRecipes();
   }, []);
-  
+
   const loadRecipes = async () => {
     try {
       const availableRecipes = await api.getRecipes();
@@ -30,32 +30,32 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
       console.error('Error loading recipes:', err);
     }
   };
-  
+
   const addChef = () => {
     setChefNames([...chefNames, `Chef ${chefNames.length + 1}`]);
   };
-  
+
   const removeChef = (index: number) => {
     if (chefNames.length > 1) {
       setChefNames(chefNames.filter((_, i) => i !== index));
     }
   };
-  
+
   const updateChefName = (index: number, name: string) => {
     const newChefNames = [...chefNames];
     newChefNames[index] = name;
     setChefNames(newChefNames);
   };
-  
+
   const startSession = async () => {
     if (!selectedRecipe || chefNames.length === 0) {
       setError('Please select a recipe and add at least one chef');
       return;
     }
-    
+
     setLoading(true);
     setError('');
-    
+
     try {
       await api.startSession({
         recipe_id: selectedRecipe,
@@ -77,7 +77,7 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
       setLoading(false);
     }
   };
-  
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="card">
@@ -86,13 +86,13 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Opticook</h1>
           <p className="text-gray-600">Smart cooking session scheduling</p>
         </div>
-        
+
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <p className="text-red-800">{error}</p>
           </div>
         )}
-        
+
         <div className="space-y-6">
           {/* Recipe Selection */}
           <div>
@@ -122,7 +122,7 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
               Add New Recipe
             </button>
           </div>
-          
+
           {/* Chef Management */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -138,7 +138,7 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
                 + Add Chef
               </button>
             </div>
-            
+
             <div className="space-y-3">
               {chefNames.map((name, index) => (
                 <div key={index} className="flex items-center gap-3">
@@ -164,7 +164,7 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
               ))}
             </div>
           </div>
-          
+
           {/* Start Button */}
           <button
             onClick={startSession}
@@ -187,4 +187,4 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
       </div>
     </div>
   );
-}; 
+};
