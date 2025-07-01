@@ -59,4 +59,20 @@ export interface RecipeInfo {
     description: string;
   }[];
   dependencies: number[];
+}
+
+export interface AtomicInstructionRequest {
+  description: string;
+  attention: boolean;
+  duration_seconds: number;
+}
+
+export interface CookingInstructionRequest {
+  aiList: AtomicInstructionRequest[];
+  dependencies: number[];
+}
+
+export interface AddRecipeRequest {
+  recipe_name: string;
+  instructions: CookingInstructionRequest[];
 } 

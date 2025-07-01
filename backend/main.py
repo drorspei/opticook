@@ -2,9 +2,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dataclasses import asdict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import csv
 import os
+import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
 from computations_optimized import active_ai_done, refresh_session
@@ -86,6 +87,34 @@ def parse_cheesecake_recipe() -> List[Dict]:
 # Add the parsed cheesecake recipe to RECIPE_STORE
 RECIPE_STORE["cheesecake"] = parse_cheesecake_recipe()
 
+# Load added recipes from pickle file
+ADDED_RECIPES_FILE = "added_recipes.pkl"
+
+def load_added_recipes():
+    if os.path.exists(ADDED_RECIPES_FILE):
+        try:
+            with open(ADDED_RECIPES_FILE, 'rb') as f:
+                added_recipes: List[Tuple[str, List[Dict]]] = pickle.load(f)
+                for recipe_name, recipe_data in added_recipes:
+                    RECIPE_STORE[recipe_name] = recipe_data
+        except Exception as e:
+            print(f"Error loading added recipes: {e}")
+
+def save_added_recipes():
+    added_recipes = []
+    for recipe_id, recipe_data in RECIPE_STORE.items():
+        if recipe_id not in ["example_recipe", "multi_task_recipe", "cheesecake"]:
+            added_recipes.append((recipe_id, recipe_data))
+    
+    try:
+        with open(ADDED_RECIPES_FILE, 'wb') as f:
+            pickle.dump(added_recipes, f)
+    except Exception as e:
+        print(f"Error saving added recipes: {e}")
+        raise
+
+load_added_recipes()
+
 # Global session holder
 _current_session: Optional[Session] = None
 
@@ -101,6 +130,19 @@ class DonePayload(BaseModel):
 
 class RefreshPayload(BaseModel):
     timestamp_seconds: float = Field(..., description="Epoch seconds from client")
+
+class AtomicInstructionPayload(BaseModel):
+    description: str
+    attention: bool
+    duration_seconds: int
+
+class CookingInstructionPayload(BaseModel):
+    aiList: List[AtomicInstructionPayload]
+    dependencies: List[int]
+
+class AddRecipePayload(BaseModel):
+    recipe_name: str
+    instructions: List[CookingInstructionPayload]
 
 @app.get("/api/v1/session/current/recipes", response_model=List[str])
 def list_recipes():
@@ -185,3 +227,29 @@ def reset_session():
     global _current_session
     _current_session = None
     return {}
+
+@app.post("/api/v1/recipes/add")
+def add_recipe(payload: AddRecipePayload):
+    if payload.recipe_name in RECIPE_STORE:
+        raise HTTPException(status_code=409, detail="Recipe name already exists")
+    
+    recipe_data = []
+    for index, instruction in enumerate(payload.instructions):
+        ai_list = []
+        for ai in instruction.aiList:
+            ai_list.append({
+                "attention": ai.attention,
+                "duration_seconds": ai.duration_seconds,
+                "description": ai.description
+            })
+        
+        recipe_data.append({
+            "index": index,
+            "aiList": ai_list,
+            "dependencies": instruction.dependencies
+        })
+    
+    RECIPE_STORE[payload.recipe_name] = recipe_data
+    save_added_recipes()
+    
+    return {"message": "Recipe added successfully", "recipe_id": payload.recipe_name}

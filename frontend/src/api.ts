@@ -1,4 +1,4 @@
-import { Session, StartSessionRequest, MarkDoneRequest, RefreshRequest, RecipeInfo } from './types';
+import { Session, StartSessionRequest, MarkDoneRequest, RefreshRequest, RecipeInfo, AddRecipeRequest } from './types';
 
 const API_BASE = '/api/v1/session/current';
 
@@ -75,6 +75,23 @@ export const api = {
   // Send heartbeat for a chef
   async heartbeat(chefName: string): Promise<Session> {
     return apiRequest<Session>(`/heartbeat?chef=${encodeURIComponent(chefName)}`);
+  },
+
+  // Add a new recipe
+  async addRecipe(request: AddRecipeRequest): Promise<{ message: string; recipe_id: string }> {
+    const response = await fetch('/api/v1/recipes/add', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new ApiError(response.status, `API request failed: ${response.statusText}`);
+    }
+
+    return response.json();
   },
 };
 

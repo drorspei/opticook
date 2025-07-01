@@ -3,6 +3,7 @@ import { RefreshCw, RotateCcw, ChefHat, Clock } from 'lucide-react';
 import { Session, ActiveTask } from './types';
 import { api, ApiError } from './api';
 import { SessionSetup } from './components/SessionSetup';
+import { AddRecipe } from './components/AddRecipe';
 import { TaskCard } from './components/TaskCard';
 import { ChefStatus } from './components/ChefStatus';
 import { 
@@ -19,6 +20,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [sessionStartTime, setSessionStartTime] = useState<number>(0);
+  const [showAddRecipe, setShowAddRecipe] = useState(false);
   
   // Timer for updating current time
   useEffect(() => {
@@ -103,8 +105,22 @@ function App() {
   
   const handleSessionStarted = () => {
     setSessionStartTime(currentTime);
+    setShowAddRecipe(false);
     // Load initial session state
     loadSessionState();
+  };
+
+  const handleAddRecipe = () => {
+    setShowAddRecipe(true);
+  };
+
+  const handleBackToSetup = () => {
+    setShowAddRecipe(false);
+  };
+
+  const handleRecipeAdded = () => {
+    setShowAddRecipe(false);
+    // Optionally refresh the recipe list or show a success message
   };
   
   const loadSessionState = async () => {
@@ -127,7 +143,20 @@ function App() {
   }, []);
   
   if (!session) {
-    return <SessionSetup onSessionStarted={handleSessionStarted} />;
+    if (showAddRecipe) {
+      return (
+        <AddRecipe 
+          onBack={handleBackToSetup}
+          onRecipeAdded={handleRecipeAdded}
+        />
+      );
+    }
+    return (
+      <SessionSetup 
+        onSessionStarted={handleSessionStarted}
+        onAddRecipe={handleAddRecipe}
+      />
+    );
   }
   
   const totalTime = getTotalRecipeTime(session.recipe);

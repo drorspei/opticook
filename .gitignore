@@ -3,6 +3,7 @@ node_modules/
 frontend/node_modules/
 
 # Python
+*.pkl
 __pycache__/
 *.py[cod]
 *$py.class

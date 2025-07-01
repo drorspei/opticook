@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Users, Play, Loader } from 'lucide-react';
+import { ChefHat, Users, Play, Loader, Plus } from 'lucide-react';
 import { api, ApiError } from '../api';
 
 interface SessionSetupProps {
   onSessionStarted: () => void;
+  onAddRecipe: () => void;
 }
 
-export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted }) => {
+export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, onAddRecipe }) => {
   const [recipes, setRecipes] = useState<string[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<string>('');
   const [chefNames, setChefNames] = useState<string[]>(['Alice', 'Bob']);
@@ -111,6 +112,15 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted }) 
                 </option>
               ))}
             </select>
+            <button
+              type="button"
+              onClick={onAddRecipe}
+              className="w-full mt-3 p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+              disabled={loading}
+            >
+              <Plus className="w-5 h-5" />
+              Add New Recipe
+            </button>
           </div>
           
           {/* Chef Management */}
