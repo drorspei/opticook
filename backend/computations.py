@@ -67,42 +67,42 @@ def compute_naive_time_upper_bound(session: Session, vertices: Set[int]) -> int:
 
 def compute_smart_time_upper_bound(session: Session, vertices: Set[int], edges: List[Tuple[int, int]]) -> int:
     """Compute smarter upper bound considering parallelism and dependencies.
-    
+
     Uses critical path analysis: the longest path through the dependency graph
     represents the minimum time needed, accounting for parallelization.
     """
     if not vertices:
         return 0
-    
+
     # Build adjacency lists for the dependency graph
     successors: Dict[int, List[int]] = {v: [] for v in vertices}
     predecessors: Dict[int, List[int]] = {v: [] for v in vertices}
-    
+
     for pred, succ in edges:
         if pred in vertices and succ in vertices:
             successors[pred].append(succ)
             predecessors[succ].append(pred)
-    
+
     # Find vertices with no predecessors (can start immediately)
     start_vertices = [v for v in vertices if not predecessors[v]]
-    
+
     # If no start vertices but we have vertices, there's a cycle - fall back to naive bound
     if not start_vertices and vertices:
         return compute_naive_time_upper_bound(session, vertices)
-    
+
     # Compute earliest start time for each vertex using topological sort
     earliest_start: Dict[int, int] = {}
     earliest_finish: Dict[int, int] = {}
-    
+
     # Process vertices in topological order
     processed = set()
     queue = list(start_vertices)
-    
+
     while queue:
         v = queue.pop(0)
         if v in processed:
             continue
-            
+
         # Check if all predecessors have been processed
         if all(p in processed for p in predecessors[v]):
             # Compute earliest start time
@@ -110,22 +110,22 @@ def compute_smart_time_upper_bound(session: Session, vertices: Set[int], edges: 
                 earliest_start[v] = 0
             else:
                 earliest_start[v] = max(earliest_finish[p] for p in predecessors[v])
-            
+
             # Compute earliest finish time
             inst_time = instruction_cooking_time(session.recipe[v])
             earliest_finish[v] = earliest_start[v] + inst_time
-            
+
             processed.add(v)
-            
+
             # Add successors to queue
             queue.extend(successors[v])
-    
+
     # The upper bound is the maximum finish time
     if earliest_finish:
         time_ub = max(earliest_finish.values())
     else:
         time_ub = 0
-    
+
     # Account for number of chefs - if we have fewer chefs than parallel paths,
     # we need to scale up the bound
     num_chefs = len(session.chefs_data)
@@ -136,7 +136,7 @@ def compute_smart_time_upper_bound(session: Session, vertices: Set[int], edges: 
         if avg_parallelism > num_chefs:
             # Scale up based on chef limitation
             time_ub = int(time_ub * (avg_parallelism / num_chefs))
-    
+
     return time_ub
 
 
@@ -173,7 +173,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
     naive_bound = compute_naive_time_upper_bound(session, vertices)
     smart_bound = compute_smart_time_upper_bound(session, vertices, edges)
     time_ub = min(naive_bound, smart_bound)
-    
+
     # print(f"[DEBUG] cooking_graph: naive_bound={naive_bound}, smart_bound={smart_bound}, using time_ub={time_ub}")
     # print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={edges}")
     return vertices, edges, time_ub
@@ -270,14 +270,23 @@ def _chef_needs_attention(session: Session, chef: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def at_most_once_clauses(triple2idx: Dict[Tuple[str, int, int], int], vertex_set: Set[int], chefs: List[str], time_slots: range) -> List[List[int]]:
+def at_most_once_clauses(triple2idx: Dict[Tuple[str, int, int], int], vertex_set: Set[int], chefs: List[str], time_slots: range, time_windows: Dict[int, Tuple[int, int]] = None) -> List[List[int]]:
     # Using commander variable encoding for at-most-one constraints
     # This trades O(n²) clauses for O(n) clauses + O(n/k) auxiliary variables
     clauses3: List[List[int]] = []
-    next_var = max(triple2idx.values()) + 1  # Start auxiliary variables after existing ones
+    next_var = max(triple2idx.values(), default=-1) + 1  # Start auxiliary variables after existing ones
 
     for v in vertex_set:
-        vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots]
+        if time_windows:
+            v_start, v_end = time_windows[v]
+            vars_v = []
+            for c in chefs:
+                for t in range(v_start, min(v_end + 1, len(time_slots))):
+                    triple = (c, t, v)
+                    if triple in triple2idx:
+                        vars_v.append(triple2idx[triple])
+        else:
+            vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots]
 
         if len(vars_v) <= 3:
             # For small groups, pairwise is still efficient
@@ -323,6 +332,63 @@ def at_most_once_clauses(triple2idx: Dict[Tuple[str, int, int], int], vertex_set
     return clauses3
 
 
+def compute_time_windows(session: Session, vertex_set: Set[int], edges: List[Tuple[int, int]], time_ub: int, now: int) -> Dict[int, Tuple[int, int]]:
+    """Compute valid time windows for each instruction based on dependencies and duration constraints."""
+    # Helper to get instruction (potentially shortened for active tasks)
+    active_recipe = recipe_active_part(session, now)
+    def _inst(idx: int):
+        return active_recipe.get(idx, session.recipe[idx])
+
+    # Initialize time windows
+    time_windows: Dict[int, Tuple[int, int]] = {}
+
+    # Build dependency graph
+    successors: Dict[int, List[int]] = {v: [] for v in vertex_set}
+    predecessors: Dict[int, List[int]] = {v: [] for v in vertex_set}
+
+    for pred, succ in edges:
+        successors[pred].append(succ)
+        predecessors[succ].append(pred)
+
+    # Compute earliest start times (forward pass)
+    earliest_start: Dict[int, int] = {}
+    processed = set()
+    queue = [v for v in vertex_set if not predecessors[v]]
+
+    while queue:
+        v = queue.pop(0)
+        if v in processed:
+            continue
+
+        if all(p in processed for p in predecessors[v]):
+            if not predecessors[v]:
+                earliest_start[v] = 0
+            else:
+                # Must start after all predecessors finish
+                max_pred_finish = max(earliest_start[p] + instruction_cooking_time(_inst(p))
+                                    for p in predecessors[v])
+                earliest_start[v] = max_pred_finish
+
+            processed.add(v)
+            queue.extend(successors[v])
+
+    # For any unprocessed vertices (cycles), set earliest start to 0
+    for v in vertex_set:
+        if v not in earliest_start:
+            earliest_start[v] = 0
+
+    # Compute latest start times based on duration constraints
+    for v in vertex_set:
+        duration = instruction_cooking_time(_inst(v))
+        # Cannot start later than time_ub - duration
+        latest_start = max(0, time_ub - duration)
+
+        # Time window is [earliest_start, latest_start]
+        time_windows[v] = (earliest_start[v], latest_start)
+
+    return time_windows
+
+
 def session2sat(session: Session, time_ub: int, now: int):
     """Encode the *remaining* scheduling problem as SAT.
 
@@ -340,8 +406,17 @@ def session2sat(session: Session, time_ub: int, now: int):
     # print(f"[DEBUG] session2sat: vertex_set={vertex_set}, edges={edges}, time_ub={time_ub}")
     # print(f"[DEBUG] session2sat: time_slots={list(time_slots)}, chefs={chefs}")
 
-    # ---------------- triple enumeration ----------------
-    triples = [(p, t, v) for p in chefs for v in vertex_set for t in time_slots]
+    # Compute valid time windows for each instruction
+    time_windows = compute_time_windows(session, vertex_set, edges, time_ub, now)
+
+    # ---------------- triple enumeration (filtered) ----------------
+    triples = []
+    for p in chefs:
+        for v in vertex_set:
+            start_time, end_time = time_windows[v]
+            for t in range(start_time, min(end_time + 1, time_ub)):
+                triples.append((p, t, v))
+
     triple2idx = {tpl: idx for idx, tpl in enumerate(triples, 1)}
 
     # print(f"[DEBUG] session2sat: triples={triples}")
@@ -399,39 +474,56 @@ def session2sat(session: Session, time_ub: int, now: int):
         for u in vertex_set:
             if v == u:  # Skip self-overlap constraints
                 continue
-            for t in time_slots:
+            v_start, v_end = time_windows[v]
+            u_start, u_end = time_windows[u]
+
+            for t in range(u_start, min(u_end + 1, time_ub)):
                 for s in interval_union(
                     forbidden_intervals_shifts(attention_span(_inst(v)), attention_span(_inst(u)))
                 ):
-                    if 0 <= t + s < time_ub:
+                    t_v = t + s
+                    if v_start <= t_v <= v_end and 0 <= t_v < time_ub:
                         for chef in chefs:
-                            clauses1.append([-triple2idx[(chef, t + s, v)], -triple2idx[(chef, t, u)]])
+                            triple_v = (chef, t_v, v)
+                            triple_u = (chef, t, u)
+                            if triple_v in triple2idx and triple_u in triple2idx:
+                                clauses1.append([-triple2idx[triple_v], -triple2idx[triple_u]])
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
     for v in vertex_set:
         clause: List[int] = []
         dur = instruction_cooking_time(_inst(v))
+        v_start, v_end = time_windows[v]
+
         for chef in chefs:
-            for t in time_slots:
+            for t in range(v_start, min(v_end + 1, time_ub)):
                 if t + dur <= time_ub:
-                    clause.append(triple2idx[(chef, t, v)])
+                    triple = (chef, t, v)
+                    if triple in triple2idx:
+                        clause.append(triple2idx[triple])
         clauses2.append(clause)
 
     # ---------------- part 3 · every task at most once ---------------------
-    clauses3 = at_most_once_clauses(triple2idx, vertex_set, chefs, time_slots)
+    clauses3 = at_most_once_clauses(triple2idx, vertex_set, chefs, time_slots, time_windows)
 
     # ---------------- part 4 · dependency order ----------------------------
     clauses4: List[List[int]] = []
     for dep, dst in edges:  # dep must finish before dst starts
         dur_dep = instruction_cooking_time(_inst(dep))
+        dep_start, dep_end = time_windows[dep]
+        dst_start, dst_end = time_windows[dst]
+
         for chef1 in chefs:
             for chef2 in chefs:
-                for t_dep in time_slots:
-                    for t_dst in time_slots:
+                for t_dep in range(dep_start, min(dep_end + 1, time_ub)):
+                    for t_dst in range(dst_start, min(dst_end + 1, time_ub)):
                         # dst cannot start before dep finishes
                         if t_dst < t_dep + dur_dep:
-                            clauses4.append([-triple2idx[(chef1, t_dep, dep)], -triple2idx[(chef2, t_dst, dst)]])
+                            triple_dep = (chef1, t_dep, dep)
+                            triple_dst = (chef2, t_dst, dst)
+                            if triple_dep in triple2idx and triple_dst in triple2idx:
+                                clauses4.append([-triple2idx[triple_dep], -triple2idx[triple_dst]])
 
     all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4
     return triple2idx, all_clauses
@@ -450,7 +542,7 @@ def satSolve(clauses, triple2idx):
         return False
 
     idx2triple = {idx: tpl for tpl, idx in triple2idx.items()}
-    return [idx2triple[i] for i, val in enumerate(solution) if val and i < len(idx2triple)]
+    return [idx2triple[i] for i, val in enumerate(solution) if val and i in idx2triple]
 
 
 # ---------------- timeout wrapper ----------------------------------------
@@ -575,9 +667,23 @@ def refresh_session(session: Session, now: int) -> Session:
             return session
     else:
         pass
-        # print(f"[DEBUG] refresh_session: No SAT solution found")
+        print(f"[DEBUG] refresh_session: No SAT solution found")
 
     return session
 
 
-# In[ ]:
+def test_example_reciple():
+    from data_models import Chef, AtomicInstruction
+    solution = satSolve(
+        *session2sat(
+            Session(recipe=[CookingInstruction(index=0, aiList=[AtomicInstruction(attention=True, duration=60, description='chop onions'), AtomicInstruction(attention=False, duration=30, description='simmer')], dependencies=[])], chefs_data={'Alice': Chef(name='Alice', addr=None, heartbeat=None, disconnected=False), 'Bob': Chef(name='Bob', addr=None, heartbeat=None, disconnected=False)}, cooking_map={'Alice': {}, 'Bob': {}}, done_tasks={}),
+            475,
+            0
+        )[::-1]
+    )
+    print(solution)
+    assert solution is not False
+
+
+if __name__ == "__main__":
+    test_example_reciple()
