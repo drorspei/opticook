@@ -229,29 +229,3 @@ class ParallelGoldenSectionSearcher(ParallelSearcher):
                     last_valid = seq_result
 
         return last_valid
-
-
-class AdaptiveParallelSearcher(ParallelSearcher):
-    """Adaptive search that chooses the best strategy based on range size."""
-
-    def search(self, lb: int, ub: int, num_cores: Optional[int] = None) -> Optional[int]:
-        if num_cores is None:
-            num_cores = mp.cpu_count()
-
-        range_size = ub - lb + 1
-
-        if range_size < num_cores * 2:
-            # Small range: use sequential
-            return self.sequential_search(lb, ub)
-        elif range_size < num_cores * 10:
-            # Medium range: use parallel binary search
-            searcher = ParallelBinarySearcher(self.tester_class, self.tester_args)
-            return searcher.search(lb, ub, num_cores)
-        elif range_size < num_cores * 50:
-            # Large range: use interval search
-            searcher = ParallelIntervalSearcher(self.tester_class, self.tester_args)
-            return searcher.search(lb, ub, num_cores)
-        else:
-            # Very large range: use golden section
-            searcher = ParallelGoldenSectionSearcher(self.tester_class, self.tester_args)
-            return searcher.search(lb, ub, num_cores)

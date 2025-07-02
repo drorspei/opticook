@@ -54,6 +54,92 @@ def attention_span(inst: CookingInstruction) -> List[Tuple[int, int]]:
 # Dependency graph helper
 # ---------------------------------------------------------------------------
 
+def compute_naive_time_upper_bound(session: Session, vertices: Set[int]) -> int:
+    """Compute naive upper bound on time to cook by summing all instruction times."""
+    time_ub = 0
+    for inst in session.recipe:
+        if inst.index in vertices:
+            inst_time = instruction_cooking_time(inst)
+            time_ub += inst_time
+            # print(f"[DEBUG] compute_naive_time_upper_bound: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
+    return time_ub
+
+
+def compute_smart_time_upper_bound(session: Session, vertices: Set[int], edges: List[Tuple[int, int]]) -> int:
+    """Compute smarter upper bound considering parallelism and dependencies.
+    
+    Uses critical path analysis: the longest path through the dependency graph
+    represents the minimum time needed, accounting for parallelization.
+    """
+    if not vertices:
+        return 0
+    
+    # Build adjacency lists for the dependency graph
+    successors: Dict[int, List[int]] = {v: [] for v in vertices}
+    predecessors: Dict[int, List[int]] = {v: [] for v in vertices}
+    
+    for pred, succ in edges:
+        if pred in vertices and succ in vertices:
+            successors[pred].append(succ)
+            predecessors[succ].append(pred)
+    
+    # Find vertices with no predecessors (can start immediately)
+    start_vertices = [v for v in vertices if not predecessors[v]]
+    
+    # If no start vertices but we have vertices, there's a cycle - fall back to naive bound
+    if not start_vertices and vertices:
+        return compute_naive_time_upper_bound(session, vertices)
+    
+    # Compute earliest start time for each vertex using topological sort
+    earliest_start: Dict[int, int] = {}
+    earliest_finish: Dict[int, int] = {}
+    
+    # Process vertices in topological order
+    processed = set()
+    queue = list(start_vertices)
+    
+    while queue:
+        v = queue.pop(0)
+        if v in processed:
+            continue
+            
+        # Check if all predecessors have been processed
+        if all(p in processed for p in predecessors[v]):
+            # Compute earliest start time
+            if not predecessors[v]:
+                earliest_start[v] = 0
+            else:
+                earliest_start[v] = max(earliest_finish[p] for p in predecessors[v])
+            
+            # Compute earliest finish time
+            inst_time = instruction_cooking_time(session.recipe[v])
+            earliest_finish[v] = earliest_start[v] + inst_time
+            
+            processed.add(v)
+            
+            # Add successors to queue
+            queue.extend(successors[v])
+    
+    # The upper bound is the maximum finish time
+    if earliest_finish:
+        time_ub = max(earliest_finish.values())
+    else:
+        time_ub = 0
+    
+    # Account for number of chefs - if we have fewer chefs than parallel paths,
+    # we need to scale up the bound
+    num_chefs = len(session.chefs_data)
+    if num_chefs > 0:
+        # Approximate the effect of limited chefs by computing average parallelism
+        total_work = sum(instruction_cooking_time(session.recipe[v]) for v in vertices)
+        avg_parallelism = total_work / max(time_ub, 1)
+        if avg_parallelism > num_chefs:
+            # Scale up based on chef limitation
+            time_ub = int(time_ub * (avg_parallelism / num_chefs))
+    
+    return time_ub
+
+
 def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], int]:
     def is_instruction_completed(inst_index: int) -> bool:
         """Check if an instruction is fully completed (all AIs are done)."""
@@ -77,16 +163,18 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
     # print(f"[DEBUG] cooking_graph: vertices={vertices}")
 
     edges: List[Tuple[int, int]] = []
-    time_ub = 0
     for inst in session.recipe:
         if inst.index in vertices:
-            inst_time = instruction_cooking_time(inst)
-            time_ub += inst_time
-            # print(f"[DEBUG] cooking_graph: instruction {inst.index} adds {inst_time} to time_ub (total now {time_ub})")
             for dep in inst.dependencies:
                 if dep in vertices:
                     edges.append((dep, inst.index))
 
+    # Compute both bounds and use the minimum
+    naive_bound = compute_naive_time_upper_bound(session, vertices)
+    smart_bound = compute_smart_time_upper_bound(session, vertices, edges)
+    time_ub = min(naive_bound, smart_bound)
+    
+    # print(f"[DEBUG] cooking_graph: naive_bound={naive_bound}, smart_bound={smart_bound}, using time_ub={time_ub}")
     # print(f"[DEBUG] cooking_graph: final time_ub={time_ub}, edges={edges}")
     return vertices, edges, time_ub
 

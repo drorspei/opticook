@@ -16,8 +16,7 @@ from computations import satSolve, session2sat, cooking_graph
 from parallel_search_fixed import (
     ParallelBinarySearcher,
     # ParallelIntervalSearcher,
-    ParallelGoldenSectionSearcher,
-    AdaptiveParallelSearcher
+    ParallelGoldenSectionSearcher
 )
 
 
@@ -34,6 +33,7 @@ class ExactSATTimeTester:
         with contextlib.redirect_stderr(io.StringIO()):
             # result = graph2solve_with_timeout_exact(self.session, t, self.now, self.timeout)
             result = satSolve(*session2sat(self.session, t, self.now)[::-1])
+            print(f"satSolve({t}) = {result is not False}")
         return result is not False
 
 
@@ -136,7 +136,6 @@ def main():
     algorithms = [
         ("Parallel Binary Search", ParallelBinarySearcher, [2, 4, 8]),
         ("Parallel Golden Section Search", ParallelGoldenSectionSearcher, [2, 4, 8]),
-        ("Adaptive Parallel Search", AdaptiveParallelSearcher, [2, 4, 8]),
     ]
 
     for algo_name, algo_class, core_counts in algorithms:
