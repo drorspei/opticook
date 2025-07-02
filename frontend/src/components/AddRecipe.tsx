@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, X, Save, ArrowLeft } from 'lucide-react';
+import { Plus, X, Save, ArrowLeft, Trash2 } from 'lucide-react';
 import { api, ApiError } from '../api';
 
 interface AtomicInstructionForm {
@@ -29,6 +29,7 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (editRecipeId) {
@@ -131,6 +132,28 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
     setInstructions(newInstructions);
   };
 
+  const deleteRecipe = async () => {
+    if (!editRecipeId) return;
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      await api.deleteRecipe(editRecipeId);
+      onRecipeAdded(); // This will take us back to the main page
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(`Failed to delete recipe: ${err.message}`);
+      } else {
+        setError('Failed to delete recipe');
+      }
+      console.error('Error deleting recipe:', err);
+      setShowDeleteConfirm(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const saveRecipe = async () => {
     if (!recipeName.trim()) {
       setError('Recipe name is required');
@@ -200,19 +223,55 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
           </div>
         )}
 
+        {showDeleteConfirm && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-red-800 font-medium mb-3">Are you sure you want to delete this recipe?</p>
+            <p className="text-red-700 text-sm mb-4">This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={deleteRecipe}
+                disabled={loading}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={loading}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Recipe Name {editRecipeId && <span className="text-sm font-normal text-gray-500">(can be changed)</span>}
             </label>
-            <input
-              type="text"
-              value={recipeName}
-              onChange={(e) => setRecipeName(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-              placeholder="Enter recipe name"
-              disabled={loading}
-            />
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={recipeName}
+                onChange={(e) => setRecipeName(e.target.value)}
+                className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                placeholder="Enter recipe name"
+                disabled={loading}
+              />
+              {editRecipeId && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={loading}
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Recipe
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">

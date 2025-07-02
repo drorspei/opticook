@@ -110,6 +110,22 @@ export const api = {
 
     return response.json();
   },
+
+  // Delete a recipe
+  async deleteRecipe(recipeId: string): Promise<{ message: string }> {
+    const response = await fetch(`/api/v1/recipes/${recipeId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new ApiError(response.status, `API request failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  },
 };
 
 export { ApiError };

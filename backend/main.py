@@ -305,3 +305,25 @@ def update_recipe(recipe_id: str, payload: AddRecipePayload):
     save_added_recipes()
     
     return {"message": "Recipe updated successfully", "recipe_id": new_recipe_name}
+
+@app.delete("/api/v1/recipes/{recipe_id}")
+def delete_recipe(recipe_id: str):
+    global _current_recipe_id
+    
+    if recipe_id not in RECIPE_STORE:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    # Prevent deleting built-in recipes
+    built_in_recipes = ["example_recipe", "multi_task_recipe", "cheesecake"]
+    if recipe_id in built_in_recipes:
+        raise HTTPException(status_code=403, detail="Cannot delete built-in recipes")
+    
+    # Check if there's an active session using this recipe
+    if _current_session and _current_recipe_id == recipe_id:
+        raise HTTPException(status_code=409, detail="Cannot delete recipe while it's being used in an active session")
+    
+    # Delete the recipe
+    del RECIPE_STORE[recipe_id]
+    save_added_recipes()
+    
+    return {"message": "Recipe deleted successfully"}

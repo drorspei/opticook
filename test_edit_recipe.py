@@ -103,6 +103,27 @@ def test_edit_recipe():
     response = requests.get(f"{BASE_URL}/session/current/recipes/Test Recipe Edit Renamed")
     print(f"Response: {response.status_code}")
     print(f"Renamed recipe: {json.dumps(response.json(), indent=2)}")
+    
+    # Test deleting a built-in recipe (should fail)
+    print("\n9. Testing delete of built-in recipe (should fail)...")
+    response = requests.delete(f"{BASE_URL}/recipes/example_recipe")
+    print(f"Response: {response.status_code} - {response.json()}")
+    
+    # Test deleting the renamed recipe
+    print("\n10. Testing delete of custom recipe...")
+    response = requests.delete(f"{BASE_URL}/recipes/Test Recipe Edit Renamed")
+    print(f"Response: {response.status_code} - {response.json()}")
+    
+    # Verify the recipe is deleted
+    print("\n11. Checking deleted recipe (should be 404)...")
+    response = requests.get(f"{BASE_URL}/session/current/recipes/Test Recipe Edit Renamed")
+    print(f"Response: {response.status_code}")
+    
+    # List all recipes to confirm deletion
+    print("\n12. Listing all recipes...")
+    response = requests.get(f"{BASE_URL}/session/current/recipes")
+    print(f"Response: {response.status_code}")
+    print(f"Available recipes: {response.json()}")
 
 if __name__ == "__main__":
     test_edit_recipe()
