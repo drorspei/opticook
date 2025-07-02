@@ -3,12 +3,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dataclasses import asdict
 from typing import List, Dict, Optional, Tuple
-import csv
+from parse import parse_cheesecake_recipe
 import os
 import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
-from computations_seconds import active_ai_done, refresh_session
+from computations import active_ai_done, refresh_session
 
 app = FastAPI()
 
@@ -31,58 +31,6 @@ RECIPE_STORE: Dict[str, List[Dict]] = {
         ], "dependencies": []}
     ]
 }
-
-def parse_cheesecake_recipe() -> List[Dict]:
-    """Parse the cheesecake recipe from CSV format and convert to RECIPE_STORE format."""
-    # Keywords that indicate a task doesn't require attention
-    no_attention_keywords = ["bake", "preheat", "soften", "put out", "room temp", "cool", "simmer", "refri"]
-
-    # Read the CSV file
-    recipe_path = os.path.join(os.path.dirname(__file__), "cheesecake2.txt")
-    tasks = []
-
-    with open(recipe_path, 'r') as f:
-        reader = csv.DictReader(f, delimiter=';')
-        for row in reader:
-            if row['index']:  # Skip empty rows
-                task = {
-                    'index': int(row['index']),
-                    'title': row['title'],
-                    'time': int(row['time']),
-                    'child': int(row['child']) if row['child'] != '-1' else None
-                }
-                tasks.append(task)
-
-    # Convert child-to-parent relationships to parent-to-child dependencies
-    dependencies = {}
-    for task in tasks:
-        if task['child'] is not None:
-            # Current task is a parent of task['child']
-            child_idx = task['child']
-            if child_idx not in dependencies:
-                dependencies[child_idx] = []
-            dependencies[child_idx].append(task['index'])
-
-    # Convert to RECIPE_STORE format
-    recipe = []
-    for task in tasks:
-        # Determine if task requires attention based on keywords
-        title_lower = task['title'].lower()
-        requires_attention = not any(keyword in title_lower for keyword in no_attention_keywords)
-
-        # Create the instruction with a single AI
-        instruction = {
-            "index": task['index'],
-            "aiList": [{
-                "attention": requires_attention,
-                "duration_seconds": task['time'],
-                "description": task['title']
-            }],
-            "dependencies": dependencies.get(task['index'], [])
-        }
-        recipe.append(instruction)
-
-    return recipe
 
 # Add the parsed cheesecake recipe to RECIPE_STORE
 RECIPE_STORE["cheesecake"] = parse_cheesecake_recipe()
@@ -194,7 +142,7 @@ def mark_done(payload: DonePayload):
         new_session = active_ai_done(
             _current_session, payload.chef, payload.instruction_index, payload.timestamp_seconds
         )
-        print(f"[DEBUG] mark_done API: session updated successfully")
+        print("[DEBUG] mark_done API: session updated successfully")
         _current_session = new_session
         return asdict(_current_session)
     except KeyError as e:
