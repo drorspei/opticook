@@ -82,6 +82,27 @@ def test_edit_recipe():
     print("\n5. Testing update of built-in recipe (should fail)...")
     response = requests.put(f"{BASE_URL}/recipes/example_recipe", json=update_payload)
     print(f"Response: {response.status_code} - {response.json()}")
+    
+    # Test renaming a recipe
+    rename_payload = {
+        "recipe_name": "Test Recipe Edit Renamed",
+        "instructions": update_payload["instructions"]
+    }
+    
+    print("\n6. Testing recipe rename...")
+    response = requests.put(f"{BASE_URL}/recipes/Test Recipe Edit", json=rename_payload)
+    print(f"Response: {response.status_code} - {response.json()}")
+    
+    # Verify the old name no longer exists
+    print("\n7. Checking old recipe name (should be 404)...")
+    response = requests.get(f"{BASE_URL}/session/current/recipes/Test Recipe Edit")
+    print(f"Response: {response.status_code}")
+    
+    # Verify the new name exists
+    print("\n8. Getting renamed recipe...")
+    response = requests.get(f"{BASE_URL}/session/current/recipes/Test Recipe Edit Renamed")
+    print(f"Response: {response.status_code}")
+    print(f"Renamed recipe: {json.dumps(response.json(), indent=2)}")
 
 if __name__ == "__main__":
     test_edit_recipe()

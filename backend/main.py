@@ -254,6 +254,8 @@ def add_recipe(payload: AddRecipePayload):
 
 @app.put("/api/v1/recipes/{recipe_id}")
 def update_recipe(recipe_id: str, payload: AddRecipePayload):
+    global _current_recipe_id
+    
     if recipe_id not in RECIPE_STORE:
         raise HTTPException(status_code=404, detail="Recipe not found")
     
@@ -265,6 +267,17 @@ def update_recipe(recipe_id: str, payload: AddRecipePayload):
     # Check if there's an active session using this recipe
     if _current_session and _current_recipe_id == recipe_id:
         raise HTTPException(status_code=409, detail="Cannot update recipe while it's being used in an active session")
+    
+    # Check if renaming to a different name
+    new_recipe_name = payload.recipe_name
+    if new_recipe_name != recipe_id:
+        # Check if the new name already exists
+        if new_recipe_name in RECIPE_STORE:
+            raise HTTPException(status_code=409, detail="Recipe name already exists")
+        
+        # If renaming, we need to update the current recipe ID if it's in use
+        if _current_recipe_id == recipe_id:
+            _current_recipe_id = new_recipe_name
     
     recipe_data = []
     for index, instruction in enumerate(payload.instructions):
@@ -282,7 +295,13 @@ def update_recipe(recipe_id: str, payload: AddRecipePayload):
             "dependencies": instruction.dependencies
         })
     
-    RECIPE_STORE[recipe_id] = recipe_data
+    # If renaming, delete the old entry and create new one
+    if new_recipe_name != recipe_id:
+        del RECIPE_STORE[recipe_id]
+        RECIPE_STORE[new_recipe_name] = recipe_data
+    else:
+        RECIPE_STORE[recipe_id] = recipe_data
+    
     save_added_recipes()
     
-    return {"message": "Recipe updated successfully", "recipe_id": recipe_id}
+    return {"message": "Recipe updated successfully", "recipe_id": new_recipe_name}

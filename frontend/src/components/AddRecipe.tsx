@@ -148,10 +148,12 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
     try {
       if (editRecipeId) {
         // Update existing recipe
-        await api.updateRecipe(editRecipeId, {
+        const result = await api.updateRecipe(editRecipeId, {
           recipe_name: recipeName,
           instructions
         });
+        // If recipe was renamed, the result will contain the new recipe_id
+        // We pass this info back to the parent to update the UI accordingly
       } else {
         // Add new recipe
         await api.addRecipe({
@@ -201,7 +203,7 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
         <div className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Recipe Name
+              Recipe Name {editRecipeId && <span className="text-sm font-normal text-gray-500">(can be changed)</span>}
             </label>
             <input
               type="text"
@@ -209,7 +211,7 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, edi
               onChange={(e) => setRecipeName(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Enter recipe name"
-              disabled={loading || !!editRecipeId}
+              disabled={loading}
             />
           </div>
 
