@@ -7,7 +7,7 @@ import csv
 import os
 import pickle
 
-from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
+from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
 from computations_seconds import active_ai_done, refresh_session
 
 app = FastAPI()
@@ -105,7 +105,7 @@ def save_added_recipes():
     for recipe_id, recipe_data in RECIPE_STORE.items():
         if recipe_id not in ["example_recipe", "multi_task_recipe", "cheesecake"]:
             added_recipes.append((recipe_id, recipe_data))
-    
+
     try:
         with open(ADDED_RECIPES_FILE, 'wb') as f:
             pickle.dump(added_recipes, f)
@@ -230,7 +230,7 @@ def reset_session():
 def add_recipe(payload: AddRecipePayload):
     if payload.recipe_name in RECIPE_STORE:
         raise HTTPException(status_code=409, detail="Recipe name already exists")
-    
+
     recipe_data = []
     for index, instruction in enumerate(payload.instructions):
         ai_list = []
@@ -240,45 +240,45 @@ def add_recipe(payload: AddRecipePayload):
                 "duration_seconds": ai.duration_seconds,
                 "description": ai.description
             })
-        
+
         recipe_data.append({
             "index": index,
             "aiList": ai_list,
             "dependencies": instruction.dependencies
         })
-    
+
     RECIPE_STORE[payload.recipe_name] = recipe_data
     save_added_recipes()
-    
+
     return {"message": "Recipe added successfully", "recipe_id": payload.recipe_name}
 
 @app.put("/api/v1/recipes/{recipe_id}")
 def update_recipe(recipe_id: str, payload: AddRecipePayload):
     global _current_recipe_id
-    
+
     if recipe_id not in RECIPE_STORE:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
+
     # Prevent editing built-in recipes
     built_in_recipes = ["example_recipe", "multi_task_recipe", "cheesecake"]
     if recipe_id in built_in_recipes:
         raise HTTPException(status_code=403, detail="Cannot edit built-in recipes")
-    
+
     # Check if there's an active session using this recipe
     if _current_session and _current_recipe_id == recipe_id:
         raise HTTPException(status_code=409, detail="Cannot update recipe while it's being used in an active session")
-    
+
     # Check if renaming to a different name
     new_recipe_name = payload.recipe_name
     if new_recipe_name != recipe_id:
         # Check if the new name already exists
         if new_recipe_name in RECIPE_STORE:
             raise HTTPException(status_code=409, detail="Recipe name already exists")
-        
+
         # If renaming, we need to update the current recipe ID if it's in use
         if _current_recipe_id == recipe_id:
             _current_recipe_id = new_recipe_name
-    
+
     recipe_data = []
     for index, instruction in enumerate(payload.instructions):
         ai_list = []
@@ -288,42 +288,42 @@ def update_recipe(recipe_id: str, payload: AddRecipePayload):
                 "duration_seconds": ai.duration_seconds,
                 "description": ai.description
             })
-        
+
         recipe_data.append({
             "index": index,
             "aiList": ai_list,
             "dependencies": instruction.dependencies
         })
-    
+
     # If renaming, delete the old entry and create new one
     if new_recipe_name != recipe_id:
         del RECIPE_STORE[recipe_id]
         RECIPE_STORE[new_recipe_name] = recipe_data
     else:
         RECIPE_STORE[recipe_id] = recipe_data
-    
+
     save_added_recipes()
-    
+
     return {"message": "Recipe updated successfully", "recipe_id": new_recipe_name}
 
 @app.delete("/api/v1/recipes/{recipe_id}")
 def delete_recipe(recipe_id: str):
     global _current_recipe_id
-    
+
     if recipe_id not in RECIPE_STORE:
         raise HTTPException(status_code=404, detail="Recipe not found")
-    
+
     # Prevent deleting built-in recipes
     built_in_recipes = ["example_recipe", "multi_task_recipe", "cheesecake"]
     if recipe_id in built_in_recipes:
         raise HTTPException(status_code=403, detail="Cannot delete built-in recipes")
-    
+
     # Check if there's an active session using this recipe
     if _current_session and _current_recipe_id == recipe_id:
         raise HTTPException(status_code=409, detail="Cannot delete recipe while it's being used in an active session")
-    
+
     # Delete the recipe
     del RECIPE_STORE[recipe_id]
     save_added_recipes()
-    
+
     return {"message": "Recipe deleted successfully"}
