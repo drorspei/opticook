@@ -16,9 +16,10 @@ interface CookingInstructionForm {
 interface AddRecipeProps {
   onBack: () => void;
   onRecipeAdded: () => void;
+  editRecipeId?: string | null;
 }
 
-export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) => {
+export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded, editRecipeId }) => {
   const [recipeName, setRecipeName] = useState('');
   const [instructions, setInstructions] = useState<CookingInstructionForm[]>([
     {
@@ -30,25 +31,51 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) =
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    // Generate unique recipe name on component mount
-    const generateUniqueRecipeName = async () => {
-      try {
-        const recipes = await api.getRecipes();
-        let counter = 1;
-        let name = `Recipe ${counter}`;
-        while (recipes.includes(name)) {
-          counter++;
-          name = `Recipe ${counter}`;
+    if (editRecipeId) {
+      // Load existing recipe for editing
+      const loadRecipe = async () => {
+        try {
+          const recipeData = await api.getRecipe(editRecipeId);
+          setRecipeName(editRecipeId);
+          
+          const formattedInstructions: CookingInstructionForm[] = recipeData.map(inst => ({
+            aiList: inst.aiList.map(ai => ({
+              description: ai.description,
+              attention: ai.attention,
+              duration_seconds: ai.duration_seconds
+            })),
+            dependencies: inst.dependencies || []
+          }));
+          
+          setInstructions(formattedInstructions);
+        } catch (err) {
+          console.error('Failed to load recipe for editing:', err);
+          setError('Failed to load recipe data');
         }
-        setRecipeName(name);
-      } catch (err) {
-        console.error('Failed to generate unique recipe name:', err);
-        setRecipeName('Recipe 1'); // fallback
-      }
-    };
-    
-    generateUniqueRecipeName();
-  }, []);
+      };
+      
+      loadRecipe();
+    } else {
+      // Generate unique recipe name for new recipe
+      const generateUniqueRecipeName = async () => {
+        try {
+          const recipes = await api.getRecipes();
+          let counter = 1;
+          let name = `Recipe ${counter}`;
+          while (recipes.includes(name)) {
+            counter++;
+            name = `Recipe ${counter}`;
+          }
+          setRecipeName(name);
+        } catch (err) {
+          console.error('Failed to generate unique recipe name:', err);
+          setRecipeName('Recipe 1'); // fallback
+        }
+      };
+      
+      generateUniqueRecipeName();
+    }
+  }, [editRecipeId]);
 
   const addCookingInstruction = () => {
     setInstructions([...instructions, {
@@ -119,10 +146,19 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) =
     setError('');
 
     try {
-      await api.addRecipe({
-        recipe_name: recipeName,
-        instructions
-      });
+      if (editRecipeId) {
+        // Update existing recipe
+        await api.updateRecipe(editRecipeId, {
+          recipe_name: recipeName,
+          instructions
+        });
+      } else {
+        // Add new recipe
+        await api.addRecipe({
+          recipe_name: recipeName,
+          instructions
+        });
+      }
       onRecipeAdded();
     } catch (err) {
       if (err instanceof ApiError) {
@@ -144,7 +180,9 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) =
     <div className="max-w-4xl mx-auto">
       <div className="card">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Add New Recipe</h1>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {editRecipeId ? 'Edit Recipe' : 'Add New Recipe'}
+          </h1>
           <button
             onClick={onBack}
             className="btn-secondary flex items-center gap-2"
@@ -169,9 +207,9 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) =
               type="text"
               value={recipeName}
               onChange={(e) => setRecipeName(e.target.value)}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               placeholder="Enter recipe name"
-              disabled={loading}
+              disabled={loading || !!editRecipeId}
             />
           </div>
 
@@ -303,7 +341,7 @@ export const AddRecipe: React.FC<AddRecipeProps> = ({ onBack, onRecipeAdded }) =
               className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4" />
-              {loading ? 'Saving...' : 'Save Recipe'}
+              {loading ? 'Saving...' : (editRecipeId ? 'Update Recipe' : 'Save Recipe')}
             </button>
           </div>
         </div>

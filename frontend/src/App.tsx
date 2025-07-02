@@ -20,6 +20,7 @@ function App() {
   const [error, setError] = useState<string>('');
   const [sessionStartTime, setSessionStartTime] = useState<number>(0);
   const [showAddRecipe, setShowAddRecipe] = useState(false);
+  const [editRecipeId, setEditRecipeId] = useState<string | null>(null);
   
   // Timer for updating current time
   useEffect(() => {
@@ -109,14 +110,22 @@ function App() {
 
   const handleAddRecipe = () => {
     setShowAddRecipe(true);
+    setEditRecipeId(null);
+  };
+
+  const handleEditRecipe = (recipeId: string) => {
+    setShowAddRecipe(true);
+    setEditRecipeId(recipeId);
   };
 
   const handleBackToSetup = () => {
     setShowAddRecipe(false);
+    setEditRecipeId(null);
   };
 
   const handleRecipeAdded = () => {
     setShowAddRecipe(false);
+    setEditRecipeId(null);
     // Optionally refresh the recipe list or show a success message
   };
   
@@ -145,6 +154,7 @@ function App() {
         <AddRecipe 
           onBack={handleBackToSetup}
           onRecipeAdded={handleRecipeAdded}
+          editRecipeId={editRecipeId}
         />
       );
     }
@@ -152,6 +162,7 @@ function App() {
       <SessionSetup 
         onSessionStarted={handleSessionStarted}
         onAddRecipe={handleAddRecipe}
+        onEditRecipe={handleEditRecipe}
       />
     );
   }

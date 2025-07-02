@@ -93,6 +93,23 @@ export const api = {
 
     return response.json();
   },
+
+  // Update an existing recipe
+  async updateRecipe(recipeId: string, request: AddRecipeRequest): Promise<{ message: string; recipe_id: string }> {
+    const response = await fetch(`/api/v1/recipes/${recipeId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      throw new ApiError(response.status, `API request failed: ${response.statusText}`);
+    }
+
+    return response.json();
+  },
 };
 
 export { ApiError };

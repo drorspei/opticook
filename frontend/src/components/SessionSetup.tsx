@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Users, Play, Loader, Plus } from 'lucide-react';
+import { ChefHat, Users, Play, Loader, Plus, Edit } from 'lucide-react';
 import { api, ApiError } from '../api';
 
 interface SessionSetupProps {
   onSessionStarted: () => void;
   onAddRecipe: () => void;
+  onEditRecipe: (recipeId: string) => void;
 }
 
-export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, onAddRecipe }) => {
+export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, onAddRecipe, onEditRecipe }) => {
   const [recipes, setRecipes] = useState<string[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<string>('');
   const [chefNames, setChefNames] = useState<string[]>(['Alice', 'Bob']);
@@ -112,15 +113,27 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={onAddRecipe}
-              className="w-full mt-3 p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
-              disabled={loading}
-            >
-              <Plus className="w-5 h-5" />
-              Add New Recipe
-            </button>
+            <div className="flex gap-3 mt-3">
+              <button
+                type="button"
+                onClick={() => onEditRecipe(selectedRecipe)}
+                className="flex-1 p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || !selectedRecipe || ['example_recipe', 'multi_task_recipe', 'cheesecake'].includes(selectedRecipe)}
+                title={['example_recipe', 'multi_task_recipe', 'cheesecake'].includes(selectedRecipe) ? 'Cannot edit built-in recipes' : ''}
+              >
+                <Edit className="w-5 h-5" />
+                Edit Recipe
+              </button>
+              <button
+                type="button"
+                onClick={onAddRecipe}
+                className="flex-1 p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+                disabled={loading}
+              >
+                <Plus className="w-5 h-5" />
+                Add New Recipe
+              </button>
+            </div>
           </div>
 
           {/* Chef Management */}

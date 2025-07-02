@@ -117,6 +117,7 @@ load_added_recipes()
 
 # Global session holder
 _current_session: Optional[Session] = None
+_current_recipe_id: Optional[str] = None
 
 # Pydantic models
 class StartPayload(BaseModel):
@@ -157,12 +158,13 @@ def get_recipe(recipe_id: str):
 
 @app.post("/api/v1/session/current/start")
 def start_session(payload: StartPayload):
-    global _current_session
+    global _current_session, _current_recipe_id
     if _current_session is not None:
         raise HTTPException(status_code=409, detail="Session already running")
     raw_recipe = RECIPE_STORE.get(payload.recipe_id)
     if raw_recipe is None:
         raise HTTPException(status_code=404, detail="Unknown recipe_id")
+    _current_recipe_id = payload.recipe_id
     # Build CookingInstruction list with durations in seconds
     cis: List[CookingInstruction] = []
     for item in raw_recipe:
@@ -219,8 +221,9 @@ def get_state():
 
 @app.post("/api/v1/session/current/reset")
 def reset_session():
-    global _current_session
+    global _current_session, _current_recipe_id
     _current_session = None
+    _current_recipe_id = None
     return {}
 
 @app.post("/api/v1/recipes/add")
@@ -248,3 +251,38 @@ def add_recipe(payload: AddRecipePayload):
     save_added_recipes()
     
     return {"message": "Recipe added successfully", "recipe_id": payload.recipe_name}
+
+@app.put("/api/v1/recipes/{recipe_id}")
+def update_recipe(recipe_id: str, payload: AddRecipePayload):
+    if recipe_id not in RECIPE_STORE:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    
+    # Prevent editing built-in recipes
+    built_in_recipes = ["example_recipe", "multi_task_recipe", "cheesecake"]
+    if recipe_id in built_in_recipes:
+        raise HTTPException(status_code=403, detail="Cannot edit built-in recipes")
+    
+    # Check if there's an active session using this recipe
+    if _current_session and _current_recipe_id == recipe_id:
+        raise HTTPException(status_code=409, detail="Cannot update recipe while it's being used in an active session")
+    
+    recipe_data = []
+    for index, instruction in enumerate(payload.instructions):
+        ai_list = []
+        for ai in instruction.aiList:
+            ai_list.append({
+                "attention": ai.attention,
+                "duration_seconds": ai.duration_seconds,
+                "description": ai.description
+            })
+        
+        recipe_data.append({
+            "index": index,
+            "aiList": ai_list,
+            "dependencies": instruction.dependencies
+        })
+    
+    RECIPE_STORE[recipe_id] = recipe_data
+    save_added_recipes()
+    
+    return {"message": "Recipe updated successfully", "recipe_id": recipe_id}
