@@ -123,7 +123,7 @@ def recipe_active_part(session: Session, now: int) -> Dict[int, CookingInstructi
     for task_dict in session.cooking_map.values():
         for task in task_dict.values():
             ai = session.recipe[task.instruction_index].aiList[task.ai_index]
-            remaining = max(0, ai.duration - (now - (task.start_time or now)))
+            remaining = max(0, ai.duration - int(now - (task.start_time or now)))
             updated_ai = replace(ai, duration=remaining)
             new_ai_list = [updated_ai] + session.recipe[task.instruction_index].aiList[task.ai_index + 1 :]
             updated[task.instruction_index] = replace(session.recipe[task.instruction_index], aiList=new_ai_list)
@@ -181,8 +181,58 @@ def _chef_needs_attention(session: Session, chef: str) -> bool:
 # SAT encoding + cryptominisat search
 # ---------------------------------------------------------------------------
 
-import multiprocessing, queue, tqdm  # noqa: E402 – placed after stdlib imports deliberately
-from pycryptosat import Solver       # noqa: E402
+
+def at_most_once_clauses(triple2idx: Dict[Tuple[str, int, int], int], vertex_set: Set[int], chefs: List[str], time_slots: range) -> List[List[int]]:
+    # Using commander variable encoding for at-most-one constraints
+    # This trades O(n²) clauses for O(n) clauses + O(n/k) auxiliary variables
+    clauses3: List[List[int]] = []
+    next_var = max(triple2idx.values()) + 1  # Start auxiliary variables after existing ones
+
+    for v in vertex_set:
+        vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots]
+
+        if len(vars_v) <= 3:
+            # For small groups, pairwise is still efficient
+            for i in range(len(vars_v)):
+                for j in range(i + 1, len(vars_v)):
+                    clauses3.append([-vars_v[i], -vars_v[j]])
+        else:
+            # Commander variable encoding for larger groups
+            # Split variables into groups of size 3
+            group_size = 3
+            groups = [vars_v[i:i+group_size] for i in range(0, len(vars_v), group_size)]
+
+            # Create commander variables for each group
+            commanders = []
+            for group in groups:
+                if len(group) > 1:
+                    # Add at-most-one constraint within the group
+                    for i in range(len(group)):
+                        for j in range(i + 1, len(group)):
+                            clauses3.append([-group[i], -group[j]])
+
+                    # Create commander variable for this group
+                    cmd_var = next_var
+                    next_var += 1
+                    commanders.append(cmd_var)
+
+                    # If any variable in group is true, commander must be true
+                    for var in group:
+                        clauses3.append([-var, cmd_var])
+
+                    # If commander is false, all variables in group must be false
+                    clause = [-cmd_var]
+                    clause.extend(group)
+                    clauses3.append(clause)
+                else:
+                    # Single element groups don't need a commander
+                    commanders.append(group[0])
+
+            # Ensure at most one commander is true
+            for i in range(len(commanders)):
+                for j in range(i + 1, len(commanders)):
+                    clauses3.append([-commanders[i], -commanders[j]])
+    return clauses3
 
 
 def session2sat(session: Session, time_ub: int, now: int):
@@ -194,7 +244,8 @@ def session2sat(session: Session, time_ub: int, now: int):
     (attention spans, interval shifts, `recipe_active_part`, etc.).
     """
 
-    vertex_set, edges, _ = cooking_graph(session)
+    vertex_set, edges, time_ub2 = cooking_graph(session)
+    time_ub = min(time_ub, time_ub2)
     time_slots = range(time_ub)
     chefs      = list(session.chefs_data)
 
@@ -280,12 +331,7 @@ def session2sat(session: Session, time_ub: int, now: int):
         clauses2.append(clause)
 
     # ---------------- part 3 · every task at most once ---------------------
-    clauses3: List[List[int]] = []
-    for v in vertex_set:
-        vars_v = [triple2idx[(c, t, v)] for c in chefs for t in time_slots]
-        for i in range(len(vars_v)):
-            for j in range(i + 1, len(vars_v)):
-                clauses3.append([-vars_v[i], -vars_v[j]])
+    clauses3 = at_most_once_clauses(triple2idx, vertex_set, chefs, time_slots)
 
     # ---------------- part 4 · dependency order ----------------------------
     clauses4: List[List[int]] = []
@@ -316,12 +362,13 @@ def satSolve(clauses, triple2idx):
         return False
 
     idx2triple = {idx: tpl for tpl, idx in triple2idx.items()}
-    return [idx2triple[i] for i, val in enumerate(solution) if val]
+    return [idx2triple[i] for i, val in enumerate(solution) if val and i < len(idx2triple)]
 
 
 # ---------------- timeout wrapper ----------------------------------------
 
 def run_with_timeout(f, args, timeout, default=None):
+    import multiprocessing
     ctx = multiprocessing.get_context("fork")
     q = ctx.Queue()
 
