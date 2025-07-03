@@ -40,9 +40,14 @@ class DoneTask:  # information about a finished instruction
     time_data: List[Tuple[int, int]]  # (start, end) per AI
 
 @dataclass(frozen=True)
+class SATSchedule:
+    chef_to_tasks: Dict[str, List[int]]  # chef -> ordered list of instruction indices
+
+@dataclass(frozen=True)
 class Session:
     recipe: List[CookingInstruction]
     chefs_data: Dict[str, Chef]
     cooking_map: Dict[str, Dict[int, ActiveTask]]
     done_tasks: Dict[int, DoneTask]
+    sat_schedule: Optional[SATSchedule] = None
 

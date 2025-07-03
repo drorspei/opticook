@@ -1,0 +1,22 @@
+Opticook Code Changes Summary
+============================
+
+Backend (Python/FastAPI):
+-------------------------
+1. Added SATSchedule to session data, initially storing full SAT schedule (per-chef, per-task, with times).
+2. Refactored SATSchedule to only store the ordered list of instruction indices for each chef (no times).
+3. Updated session logic so that, after SAT scheduling, task assignment is based only on the next available instruction in each chef's list (no time comparison needed).
+4. Updated refresh_session to assign the next planned instruction for each chef, based on SATSchedule and current session state (active/done).
+5. Ensured all SAT scheduling and task assignment is now time-agnostic after session start.
+
+Frontend (React):
+-----------------
+1. Updated TaskCard to always show a "Mark Step Complete" button for any active task (attention or not).
+2. When a non-attention task's timer reaches 00:00, a "Task is Done!" message is displayed, but the backend is only notified when the chef clicks the button.
+3. Changed the main task list to display all active tasks (for any chef) at the top, followed by the rest of the tasks in their original recipe order.
+
+Design/UX:
+----------
+- The app now uses SAT scheduling only for initial planning; all online task assignment is order-based, not time-based.
+- Chefs always get their next planned task in order, and can mark any task as done at any time.
+- The frontend is more intuitive for chefs, with clear visual cues for active and completed tasks. 

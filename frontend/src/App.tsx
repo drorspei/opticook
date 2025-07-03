@@ -264,15 +264,30 @@ function App() {
           <div className="lg:col-span-2">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Cooking Tasks</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {session.recipe.map((_, instructionIndex) => (
-                <TaskCard
-                  key={instructionIndex}
-                  session={session}
-                  instructionIndex={instructionIndex}
-                  onMarkDone={markTaskDone}
-                  currentTime={currentTime}
-                />
-              ))}
+              {(() => {
+                // Build a list of active instruction indices (for any chef)
+                const activeInstructionIndices = new Set<number>();
+                Object.values(session.cooking_map).forEach(tasks => {
+                  Object.keys(tasks).forEach(idx => activeInstructionIndices.add(Number(idx)));
+                });
+                // Active tasks first, then the rest in recipe order
+                const activeTasks = session.recipe
+                  .map((_, idx) => idx)
+                  .filter(idx => activeInstructionIndices.has(idx));
+                const otherTasks = session.recipe
+                  .map((_, idx) => idx)
+                  .filter(idx => !activeInstructionIndices.has(idx));
+                const orderedIndices = [...activeTasks, ...otherTasks];
+                return orderedIndices.map(instructionIndex => (
+                  <TaskCard
+                    key={instructionIndex}
+                    session={session}
+                    instructionIndex={instructionIndex}
+                    onMarkDone={markTaskDone}
+                    currentTime={currentTime}
+                  />
+                ));
+              })()}
             </div>
           </div>
         </div>

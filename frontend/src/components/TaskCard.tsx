@@ -96,7 +96,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {instruction.aiList.map((ai, aiIndex) => {
           const isCurrentAI = isActive && activeTask?.ai_index === aiIndex;
           const isCompletedAI = session.done_tasks[instructionIndex]?.time_data.length > aiIndex;
-          
+          const isNonAttention = !ai.attention;
+          const showTaskDone = isCurrentAI && isNonAttention && remainingTime <= 0;
           return (
             <div 
               key={aiIndex}
@@ -123,16 +124,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                   {formatDuration(ai.duration)}
                 </span>
               </div>
-              
               {isCurrentAI && (
                 <div className="mt-2 flex items-center justify-between text-sm">
                   <span className="text-primary-700">
-                    {needsAttention ? 'Manual task - mark when done' : 'Auto-completing...'}
+                    {ai.attention ? 'Manual task - mark when done' : 'Auto-completing...'}
                   </span>
                   {remainingTime > 0 && (
                     <span className="text-primary-600 font-medium">
                       {formatTime(remainingTime)} remaining
                     </span>
+                  )}
+                  {showTaskDone && (
+                    <span className="text-success-700 font-semibold ml-2">Task is Done!</span>
                   )}
                 </div>
               )}
@@ -162,7 +165,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
       )}
       
-      {isActive && needsAttention && onMarkDone && (
+      {isActive && onMarkDone && (
         <button
           onClick={() => onMarkDone(instructionIndex)}
           className="btn-success w-full mt-3"

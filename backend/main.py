@@ -8,7 +8,7 @@ import os
 import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
-from computations import active_ai_done, refresh_session
+from computations import active_ai_done, refresh_session, start_session as compute_start_session
 
 app = FastAPI()
 
@@ -125,11 +125,8 @@ def start_session(payload: StartPayload):
             for ai in item["aiList"]
         ]
         cis.append(CookingInstruction(item["index"], ais, item.get("dependencies", [])))
-    # Initialize chefs
-    chefs_data = {name: Chef(name, heartbeat=None) for name in payload.chefs}
-    cooking_map = {name: {} for name in payload.chefs}
-    done_tasks: Dict[int, DoneTask] = {}
-    _current_session = Session(cis, chefs_data, cooking_map, done_tasks)
+    # Use the new computations.start_session to create the session with SAT schedule
+    _current_session = compute_start_session(cis, payload.chefs)
     return asdict(_current_session)
 
 @app.post("/api/v1/session/current/done")

@@ -11,7 +11,7 @@ from typing import Dict, List, Set, Tuple
 from pycryptosat import Solver
 
 from dataclasses import replace
-from data_models import CookingInstruction, ActiveTask, Session, DoneTask
+from data_models import CookingInstruction, ActiveTask, Session, DoneTask, SATSchedule, Chef
 
 
 # In[8]:
@@ -692,75 +692,71 @@ def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
 # ---------------------------------------------------------------------------
 
 def refresh_session(session: Session, now: int) -> Session:
-    """Return a new *Session* after assigning new work to chefs with spare attention capacity.
-
-    Workflow:
-    1. Identify chefs that are now either idle or running only low‑attention
-       tasks.
-    2. Run :func:`sat_search` to compute a schedule starting at *now*.
-    3. If the SAT solution schedules an instruction at *t = 0* for an eligible
-       chef, start that instruction's first AI immediately.
-    """
-
-    # ------------------------------------------------------------
-    # 1. Find chefs with spare attention bandwidth
-    # ------------------------------------------------------------
+    """Assign the next available instruction from the chef's SATSchedule list that is not already active or done."""
     eligible_chefs = {
         c for c in session.chefs_data if not _chef_needs_attention(session, c)
     }
-    # print(f"[DEBUG] refresh_session: now={now}, eligible_chefs={eligible_chefs}")
     if not eligible_chefs:
         print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
         return session
 
-    # ------------------------------------------------------------
-    # 2. Ask SAT solver for a schedule at *now*
-    # ------------------------------------------------------------
-    solution = sat_search(session, now)
-    # print(f"[DEBUG] refresh_session: SAT solution={solution}")
-    if solution:
-        print(f"[DEBUG] refresh_session: Found valid solution")
+    if session.sat_schedule is not None:
+        print(f"[DEBUG] refresh_session: using stored SAT schedule (order only)")
         new_map = copy.deepcopy(session.cooking_map)
-        # print(f"[DEBUG] refresh_session: initial new_map={new_map}")
-
-        # Get set of instructions that are already being worked on
         active_instructions = set()
         for chef_tasks in new_map.values():
             active_instructions.update(chef_tasks.keys())
-        print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
-
-        # Track if we actually made any new assignments
         made_new_assignments = False
+        for chef in eligible_chefs:
+            scheduled = session.sat_schedule.chef_to_tasks.get(chef, [])
+            # Find the next scheduled instruction for this chef that is not done or active
+            for task_index in scheduled:
+                if task_index in session.done_tasks:
+                    continue
+                if chef in new_map and task_index in new_map[chef]:
+                    continue
+                # Assign this instruction to the chef
+                print(f"[DEBUG] refresh_session: assigning instruction {task_index} to {chef} (from SATSchedule order)")
+                if chef not in new_map:
+                    new_map[chef] = {}
+                new_map[chef][task_index] = ActiveTask(task_index, 0, now)
+                made_new_assignments = True
+                break  # Only assign one new task per chef per refresh
+        if made_new_assignments:
+            return replace(session, cooking_map=new_map)
+        else:
+            print(f"[DEBUG] refresh_session: no new assignments made from SATSchedule, returning original session")
+            return session
 
+    # Fallback: run SAT solver as before (should not be needed)
+    print(f"[DEBUG] refresh_session: no SATSchedule, falling back to SAT solver")
+    solution = sat_search(session, now)
+    if solution:
+        print(f"[DEBUG] refresh_session: Found valid solution (fallback)")
+        new_map = copy.deepcopy(session.cooking_map)
+        active_instructions = set()
+        for chef_tasks in new_map.values():
+            active_instructions.update(chef_tasks.keys())
+        made_new_assignments = False
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
-            print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
             if starts:
                 inst_idx = starts[0][2]
-                # Only assign if this instruction is not already being worked on
                 if inst_idx not in active_instructions:
-                    print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
+                    print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now} (fallback)")
                     if chef not in new_map:
                         new_map[chef] = {}
                     new_map[chef][inst_idx] = ActiveTask(
                         inst_idx, 0, now
                     )
                     made_new_assignments = True
-                    # print(f"[DEBUG] refresh_session: updated new_map={new_map}")
-                else:
-                    pass
-                    print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
-
-        # Only update the session if we actually made new assignments
         if made_new_assignments:
             return replace(session, cooking_map=new_map)
         else:
-            print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
+            print(f"[DEBUG] refresh_session: no new assignments made, returning original session (fallback)")
             return session
     else:
-        pass
-        print("[DEBUG] refresh_session: No SAT solution found")
-
+        print("[DEBUG] refresh_session: No SAT solution found (fallback)")
     return session
 
 
@@ -775,6 +771,29 @@ def test_example_reciple():
     )
     print(solution)
     assert solution is not False
+
+
+def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session:
+    """Create a new Session and store the full SAT schedule (chef -> ordered list of instruction indices)."""
+    chefs_data = {name: Chef(name, heartbeat=None) for name in chefs}
+    cooking_map = {name: {} for name in chefs}
+    done_tasks: Dict[int, DoneTask] = {}
+    session = Session(recipe, chefs_data, cooking_map, done_tasks)
+
+    # Run SAT solver to get the full schedule
+    solution = sat_search(session, now=0)
+    chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in chefs}
+    if solution:
+        # solution is a list of (chef, start_time, task_index)
+        for chef, start_time, task_index in solution:
+            chef_to_tasks[chef].append((start_time, task_index))
+    # For each chef, sort by planned start time and keep only instruction indices
+    chef_to_tasks_ordered: Dict[str, List[int]] = {
+        chef: [task_index for start_time, task_index in sorted(tasks)]
+        for chef, tasks in chef_to_tasks.items()
+    }
+    sat_schedule = SATSchedule(chef_to_tasks_ordered)
+    return Session(recipe, chefs_data, cooking_map, done_tasks, sat_schedule=sat_schedule)
 
 
 if __name__ == "__main__":
