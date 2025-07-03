@@ -30,10 +30,10 @@ class ExactSATTimeTester:
 
     def __call__(self, t: int) -> bool:
         """Test if the scheduling problem is satisfiable with time bound t."""
-        with contextlib.redirect_stderr(io.StringIO()):
+        # with contextlib.redirect_stderr(io.StringIO()):
             # result = graph2solve_with_timeout_exact(self.session, t, self.now, self.timeout)
-            result = satSolve(*session2sat(self.session, t, self.now)[::-1])
-            print(f"satSolve({t}) = {result is not False}")
+        result = satSolve(*session2sat(self.session, t, self.now)[::-1])
+        print(f"satSolve({t}) = {result is not False}")
         return result is not False
 
 
@@ -47,7 +47,7 @@ def create_test_session(num_chefs: int = 2) -> Session:
         ais = [
             AtomicInstruction(
                 ai["attention"],
-                time_in_units(ai["duration_seconds"]),
+                ai["duration_seconds"],
                 ai["description"],
             )
             for ai in item["aiList"]
@@ -134,8 +134,8 @@ def main():
 
     # Test best-performing parallel algorithms
     algorithms = [
-        ("Parallel Binary Search", ParallelBinarySearcher, [2, 4, 8]),
-        ("Parallel Golden Section Search", ParallelGoldenSectionSearcher, [2, 4, 8]),
+        ("Parallel Binary Search", ParallelBinarySearcher, [2, 4, 8][:1]),
+        # ("Parallel Golden Section Search", ParallelGoldenSectionSearcher, [2, 4, 8]),
     ]
 
     for algo_name, algo_class, core_counts in algorithms:

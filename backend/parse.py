@@ -1,3 +1,4 @@
+from data_models import time_in_units
 from typing import Dict, List
 import os
 import csv
@@ -45,7 +46,7 @@ def parse_cheesecake_recipe() -> List[Dict]:
             "index": task['index'],
             "aiList": [{
                 "attention": requires_attention,
-                "duration_seconds": int(task['time']),
+                "duration_seconds": time_in_units(int(task['time'])),
                 "description": task['title']
             }],
             "dependencies": dependencies.get(task['index'], [])

@@ -377,14 +377,49 @@ def compute_time_windows(session: Session, vertex_set: Set[int], edges: List[Tup
         if v not in earliest_start:
             earliest_start[v] = 0
 
-    # Compute latest start times based on duration constraints
+    # Compute latest start times using backward pass through dependencies
+    latest_start: Dict[int, int] = {}
+
+    # Initialize latest finish times (backward pass)
+    latest_finish: Dict[int, int] = {}
     for v in vertex_set:
         duration = instruction_cooking_time(_inst(v))
-        # Cannot start later than time_ub - duration
-        latest_start = max(0, time_ub - duration)
+        latest_finish[v] = time_ub  # Default: can finish at time_ub
+
+    # Process vertices in reverse topological order
+    processed_back = set()
+    queue_back = [v for v in vertex_set if not successors[v]]
+
+    while queue_back:
+        v = queue_back.pop(0)
+        if v in processed_back:
+            continue
+
+        if all(s in processed_back for s in successors[v]):
+            if not successors[v]:
+                # No successors - can finish at time_ub
+                latest_finish[v] = time_ub
+            else:
+                # Must finish before any successor starts
+                min_succ_start = min(latest_start.get(s, latest_finish[s] - instruction_cooking_time(_inst(s)))
+                                   for s in successors[v])
+                latest_finish[v] = min(latest_finish[v], min_succ_start)
+
+            # Compute latest start time
+            duration = instruction_cooking_time(_inst(v))
+            latest_start[v] = max(0, latest_finish[v] - duration)
+
+            processed_back.add(v)
+            queue_back.extend(predecessors[v])
+
+    # For any unprocessed vertices, use duration-based constraint
+    for v in vertex_set:
+        if v not in latest_start:
+            duration = instruction_cooking_time(_inst(v))
+            latest_start[v] = max(0, time_ub - duration)
 
         # Time window is [earliest_start, latest_start]
-        time_windows[v] = (earliest_start[v], latest_start)
+        time_windows[v] = (earliest_start[v], latest_start[v])
 
     return time_windows
 
@@ -470,27 +505,41 @@ def session2sat(session: Session, time_ub: int, now: int):
 
     # ---------------- part 1 · no overlapping attention on same chef -------
     clauses1: List[List[int]] = []
-    for v in vertex_set:
-        for u in vertex_set:
-            if v == u:  # Skip self-overlap constraints
-                continue
-            v_start, v_end = time_windows[v]
-            u_start, u_end = time_windows[u]
 
-            for t in range(u_start, min(u_end + 1, time_ub)):
-                for s in interval_union(
-                    forbidden_intervals_shifts(attention_span(_inst(v)), attention_span(_inst(u)))
-                ):
-                    t_v = t + s
-                    if v_start <= t_v <= v_end and 0 <= t_v < time_ub:
-                        for chef in chefs:
-                            triple_v = (chef, t_v, v)
-                            triple_u = (chef, t, u)
-                            if triple_v in triple2idx and triple_u in triple2idx:
-                                clauses1.append([-triple2idx[triple_v], -triple2idx[triple_u]])
+    # Pre-filter: only consider instructions that have attention requirements
+    attention_vertices = [v for v in vertex_set if attention_span(_inst(v))]
+
+    # Early exit if no attention conflicts possible
+    if len(attention_vertices) <= 1:
+        clauses1 = []
+    else:
+        for i, v in enumerate(tqdm.tqdm(attention_vertices)):
+            for u in attention_vertices[i:]:  # Avoid duplicate pairs
+                if v == u:  # Skip self-overlap constraints
+                    continue
+                v_start, v_end = time_windows[v]
+                u_start, u_end = time_windows[u]
+
+                # Pre-compute forbidden intervals once
+                forbidden_shifts = forbidden_intervals_shifts(attention_span(_inst(v)), attention_span(_inst(u)))
+                if not forbidden_shifts:  # No conflicts possible
+                    continue
+
+                forbidden_set = interval_union(forbidden_shifts)
+
+                for chef in chefs:
+                    for t in range(u_start, min(u_end + 1, time_ub)):
+                        for s in forbidden_set:
+                            t_v = t + s
+                            if v_start <= t_v <= v_end and 0 <= t_v < time_ub:
+                                triple_v = (chef, t_v, v)
+                                triple_u = (chef, t, u)
+                                if triple_v in triple2idx and triple_u in triple2idx:
+                                    clauses1.append([-triple2idx[triple_v], -triple2idx[triple_u]])
 
     # ---------------- part 2 · every task is done at least once ------------
     clauses2: List[List[int]] = []
+
     for v in vertex_set:
         clause: List[int] = []
         dur = instruction_cooking_time(_inst(v))
@@ -514,27 +563,68 @@ def session2sat(session: Session, time_ub: int, now: int):
         dep_start, dep_end = time_windows[dep]
         dst_start, dst_end = time_windows[dst]
 
+        # Skip if windows already ensure correct ordering
+        if dst_start >= dep_start + dur_dep:
+            continue
+
         for chef1 in chefs:
             for chef2 in chefs:
+                # Only iterate over potentially conflicting time ranges
                 for t_dep in range(dep_start, min(dep_end + 1, time_ub)):
-                    for t_dst in range(dst_start, min(dst_end + 1, time_ub)):
-                        # dst cannot start before dep finishes
-                        if t_dst < t_dep + dur_dep:
-                            triple_dep = (chef1, t_dep, dep)
-                            triple_dst = (chef2, t_dst, dst)
-                            if triple_dep in triple2idx and triple_dst in triple2idx:
-                                clauses4.append([-triple2idx[triple_dep], -triple2idx[triple_dst]])
+                    # Only check dst times that could violate the constraint
+                    earliest_invalid_dst = max(dst_start, 0)
+                    latest_invalid_dst = min(dst_end + 1, t_dep + dur_dep)
 
-    all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4
+                    for t_dst in range(earliest_invalid_dst, latest_invalid_dst):
+                        triple_dep = (chef1, t_dep, dep)
+                        triple_dst = (chef2, t_dst, dst)
+                        if triple_dep in triple2idx and triple_dst in triple2idx:
+                            clauses4.append([-triple2idx[triple_dep], -triple2idx[triple_dst]])
+
+    # ---------------- part 5 · symmetry breaking for identical chefs --------
+    clauses5: List[List[int]] = []
+
+    # If we have multiple chefs and no active tasks, add symmetry breaking
+    if len(chefs) > 1 and not session.cooking_map:
+        # Sort vertices by some canonical order (e.g., by index)
+        sorted_vertices = sorted(vertex_set)
+
+        # For the first instruction to be scheduled, prefer earlier chefs
+        if sorted_vertices:
+            first_v = sorted_vertices[0]
+            v_start, v_end = time_windows[first_v]
+
+            # Create preference: chef i can only start first_v at time t if all chefs j < i
+            # are not starting any task at times <= t
+            for i in range(1, len(chefs)):
+                for t in range(v_start, min(v_end + 1, time_ub)):
+                    # If chef i starts first_v at time t
+                    triple_i = (chefs[i], t, first_v)
+                    if triple_i not in triple2idx:
+                        continue
+
+                    # Then chef 0 must be busy with something at an earlier or equal time
+                    clause = [-triple2idx[triple_i]]
+                    for v_other in vertex_set:
+                        other_start, other_end = time_windows[v_other]
+                        for t_other in range(other_start, min(t + 1, other_end + 1, time_ub)):
+                            triple_0 = (chefs[0], t_other, v_other)
+                            if triple_0 in triple2idx:
+                                clause.append(triple2idx[triple_0])
+
+                    if len(clause) > 1:  # Only add if there are alternatives
+                        clauses5.append(clause)
+
+    all_clauses = clauses0 + clauses0_5 + clauses1 + clauses2 + clauses3 + clauses4 + clauses5
     return triple2idx, all_clauses
 
 
 # ---------------- cryptominisat driver ------------------------------------
 
-def satSolve(clauses, triple2idx):
+def satSolve(clauses, triple2idx, timeout=None):
     """Run CryptoMiniSat on *clauses*. Return chosen triples list or ``False``."""
 
-    solver = Solver()
+    solver = Solver(time_limit=timeout) if timeout is not None else Solver()
     for cls in tqdm.tqdm(clauses, desc="Adding clauses"):
         solver.add_clause(cls)
     sat, solution = solver.solve()
@@ -568,7 +658,8 @@ def run_with_timeout(f, args, timeout, default=None):
 
 def graph2solve_with_timeout(session: Session, time_ub: int, now: int, timeout: int = 60):
     t2i, clauses = session2sat(session, time_ub, now)
-    return run_with_timeout(satSolve, [clauses, t2i], timeout)
+    return satSolve(clauses, t2i, timeout)
+    # return run_with_timeout(satSolve, [clauses, t2i], timeout)
 
 
 # ---------------- outer binary search ------------------------------------
@@ -590,6 +681,7 @@ def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
     """High‑level entry: minimum‑UB SAT schedule or ``False``."""
 
     ub = cooking_graph(session)[2]
+    print(f"done cooking graph, ub={ub}")
     if lb >= ub:
         return False
     return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub)
@@ -618,7 +710,7 @@ def refresh_session(session: Session, now: int) -> Session:
     }
     # print(f"[DEBUG] refresh_session: now={now}, eligible_chefs={eligible_chefs}")
     if not eligible_chefs:
-        # print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
+        print(f"[DEBUG] refresh_session: no eligible chefs, returning session")
         return session
 
     # ------------------------------------------------------------
@@ -627,7 +719,7 @@ def refresh_session(session: Session, now: int) -> Session:
     solution = sat_search(session, now)
     # print(f"[DEBUG] refresh_session: SAT solution={solution}")
     if solution:
-        # print(f"[DEBUG] refresh_session: Found valid solution: {solution}")
+        print(f"[DEBUG] refresh_session: Found valid solution")
         new_map = copy.deepcopy(session.cooking_map)
         # print(f"[DEBUG] refresh_session: initial new_map={new_map}")
 
@@ -635,19 +727,19 @@ def refresh_session(session: Session, now: int) -> Session:
         active_instructions = set()
         for chef_tasks in new_map.values():
             active_instructions.update(chef_tasks.keys())
-        # print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
+        print(f"[DEBUG] refresh_session: active_instructions={active_instructions}")
 
         # Track if we actually made any new assignments
         made_new_assignments = False
 
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
-            # print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
+            print(f"[DEBUG] refresh_session: chef={chef}, starts={starts}")
             if starts:
                 inst_idx = starts[0][2]
                 # Only assign if this instruction is not already being worked on
                 if inst_idx not in active_instructions:
-                    # print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
+                    print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now}")
                     if chef not in new_map:
                         new_map[chef] = {}
                     new_map[chef][inst_idx] = ActiveTask(
@@ -657,17 +749,17 @@ def refresh_session(session: Session, now: int) -> Session:
                     # print(f"[DEBUG] refresh_session: updated new_map={new_map}")
                 else:
                     pass
-                    # print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
+                    print(f"[DEBUG] refresh_session: instruction {inst_idx} already active, skipping assignment")
 
         # Only update the session if we actually made new assignments
         if made_new_assignments:
             return replace(session, cooking_map=new_map)
         else:
-            # print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
+            print(f"[DEBUG] refresh_session: no new assignments made, returning original session")
             return session
     else:
         pass
-        print(f"[DEBUG] refresh_session: No SAT solution found")
+        print("[DEBUG] refresh_session: No SAT solution found")
 
     return session
 
