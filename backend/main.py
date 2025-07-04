@@ -9,6 +9,7 @@ import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
 from computations import active_ai_done, refresh_session, start_session as compute_start_session
+from sat_solver_thread import SATSolverThread
 
 app = FastAPI()
 
@@ -67,6 +68,9 @@ load_added_recipes()
 _current_session: Optional[Session] = None
 _current_recipe_id: Optional[str] = None
 
+# Global SAT solver thread
+_sat_solver_thread: Optional[SATSolverThread] = None
+
 # Pydantic models
 class StartPayload(BaseModel):
     recipe_id: str
@@ -106,7 +110,7 @@ def get_recipe(recipe_id: str):
 
 @app.post("/api/v1/session/current/start")
 def start_session(payload: StartPayload):
-    global _current_session, _current_recipe_id
+    global _current_session, _current_recipe_id, _sat_solver_thread
     if _current_session is not None:
         raise HTTPException(status_code=409, detail="Session already running")
     raw_recipe = RECIPE_STORE.get(payload.recipe_id)
@@ -127,20 +131,30 @@ def start_session(payload: StartPayload):
         cis.append(CookingInstruction(item["index"], ais, item.get("dependencies", [])))
     # Use the new computations.start_session to create the session with SAT schedule
     _current_session = compute_start_session(cis, payload.chefs)
+    
+    # Start the SAT solver thread
+    _sat_solver_thread = SATSolverThread()
+    _sat_solver_thread.start(_current_session)
+    
     return asdict(_current_session)
 
 @app.post("/api/v1/session/current/done")
 def mark_done(payload: DonePayload):
-    global _current_session
+    global _current_session, _sat_solver_thread
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
     print(f"[DEBUG] mark_done API: chef={payload.chef}, instruction_index={payload.instruction_index}, timestamp_seconds={payload.timestamp_seconds}")
     try:
         new_session = active_ai_done(
-            _current_session, payload.chef, payload.instruction_index, payload.timestamp_seconds
+            _current_session, payload.chef, payload.instruction_index, int(payload.timestamp_seconds)
         )
         print("[DEBUG] mark_done API: session updated successfully")
         _current_session = new_session
+        
+        # Interrupt and restart SAT solver with updated session
+        if _sat_solver_thread:
+            _sat_solver_thread.interrupt_and_restart(new_session)
+        
         return asdict(_current_session)
     except KeyError as e:
         print(f"[DEBUG] mark_done API: KeyError - {e}")
@@ -155,7 +169,7 @@ def refresh(payload: RefreshPayload):
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
     print(f"[DEBUG] refresh API: timestamp_seconds={payload.timestamp_seconds}")
-    _current_session = refresh_session(_current_session, payload.timestamp_seconds)
+    _current_session = refresh_session(_current_session, int(payload.timestamp_seconds))
     return asdict(_current_session)
 
 @app.get("/api/v1/session/current/state")
@@ -164,11 +178,24 @@ def get_state():
         raise HTTPException(status_code=404, detail="No active session")
     return asdict(_current_session)
 
+@app.get("/api/v1/session/current/sat-stats")
+def get_sat_stats():
+    """Get statistics about the SAT solver thread."""
+    if _sat_solver_thread is None:
+        raise HTTPException(status_code=404, detail="No SAT solver thread running")
+    return _sat_solver_thread.get_stats()
+
 @app.post("/api/v1/session/current/reset")
 def reset_session():
-    global _current_session, _current_recipe_id
+    global _current_session, _current_recipe_id, _sat_solver_thread
     _current_session = None
     _current_recipe_id = None
+    
+    # Stop the SAT solver thread
+    if _sat_solver_thread:
+        _sat_solver_thread.stop()
+        _sat_solver_thread = None
+    
     return {}
 
 @app.post("/api/v1/recipes/add")

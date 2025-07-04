@@ -639,6 +639,7 @@ def satSolve(clauses, triple2idx, timeout=None):
 
 def run_with_timeout(f, args, timeout, default=None):
     import multiprocessing
+    import queue
     ctx = multiprocessing.get_context("fork")
     q = ctx.Queue()
 
@@ -664,9 +665,14 @@ def graph2solve_with_timeout(session: Session, time_ub: int, now: int, timeout: 
 
 # ---------------- outer binary search ------------------------------------
 
-def _binarysearch(f, lb: int, ub: int):
+def _binarysearch(f, lb: int, ub: int, interruption_check=None):
     last = False
     while lb <= ub:
+        # Check for interruption
+        if interruption_check and interruption_check():
+            print("Binary search interrupted")
+            return None
+        
         mid = (lb + ub) // 2
         res = f(mid)
         if res:
@@ -677,14 +683,14 @@ def _binarysearch(f, lb: int, ub: int):
     return last
 
 
-def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
+def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60, interruption_check=None):
     """High‑level entry: minimum‑UB SAT schedule or ``False``."""
 
     ub = cooking_graph(session)[2]
     print(f"done cooking graph, ub={ub}")
     if lb >= ub:
         return False
-    return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub)
+    return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub, interruption_check)
 
 
 # ---------------------------------------------------------------------------
@@ -782,7 +788,7 @@ def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session
 
     # Run SAT solver to get the full schedule
     solution = sat_search(session, now=0)
-    chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in chefs}
+    chef_to_tasks: Dict[str, List[Tuple[int, int]]] = {name: [] for name in chefs}
     if solution:
         # solution is a list of (chef, start_time, task_index)
         for chef, start_time, task_index in solution:
