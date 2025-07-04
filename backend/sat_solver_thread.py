@@ -4,7 +4,7 @@ import copy
 import logging
 from typing import Optional, Dict, Any
 from dataclasses import replace
-from computations import sat_search, Session, SATSchedule
+from backend.computations import sat_search, Session, SATSchedule
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

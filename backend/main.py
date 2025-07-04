@@ -3,13 +3,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dataclasses import asdict
 from typing import List, Dict, Optional, Tuple
-from parse import parse_cheesecake_recipe
+from backend.parse import parse_cheesecake_recipe
 import os
 import pickle
 
-from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
-from computations import active_ai_done, refresh_session, start_session as compute_start_session
-from sat_solver_thread import SATSolverThread
+from backend.data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
+from backend.computations import active_ai_done, refresh_session, start_session as compute_start_session
+from backend.sat_solver_thread import SATSolverThread
 
 app = FastAPI()
 

@@ -11,7 +11,7 @@ from typing import Dict, List, Set, Tuple
 from pycryptosat import Solver
 
 from dataclasses import replace
-from data_models import CookingInstruction, ActiveTask, Session, DoneTask, SATSchedule, Chef
+from backend.data_models import CookingInstruction, ActiveTask, Session, DoneTask, SATSchedule, Chef
 
 
 # In[8]:

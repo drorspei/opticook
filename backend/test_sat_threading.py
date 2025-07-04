@@ -56,10 +56,23 @@ def test_sat_solver_thread():
     stats = sat_thread.get_stats()
     print(f"SAT solver stats: {stats}")
     
-    # Simulate a chef finishing a task
-    print("Simulating chef finishing a task...")
-    from computations import active_ai_done
-    new_session = active_ai_done(session, 'Alice', 0, 120)  # Alice finishes task 0 at time 120
+    # Refresh session to assign tasks
+    print("Refreshing session to assign tasks...")
+    from computations import refresh_session, active_ai_done
+    session = refresh_session(session, now=0)
+    
+    # Find a chef with an active task
+    chef_with_task = None
+    task_index = None
+    for chef, tasks in session.cooking_map.items():
+        if tasks:
+            chef_with_task = chef
+            task_index = next(iter(tasks.keys()))
+            break
+    if chef_with_task is None:
+        raise RuntimeError("No chef was assigned a task after refresh. Test cannot proceed.")
+    print(f"Simulating chef '{chef_with_task}' finishing task {task_index}...")
+    new_session = active_ai_done(session, chef_with_task, task_index, 120)  # Simulate completion
     
     # Interrupt and restart SAT solver
     print("Interrupting and restarting SAT solver...")

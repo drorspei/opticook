@@ -11,9 +11,9 @@ import io
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
-from computations import satSolve, session2sat, cooking_graph
-from parallel_search_fixed import (
+from backend.data_models import Chef, AtomicInstruction, CookingInstruction, Session, time_in_units, DoneTask
+from backend.computations import satSolve, session2sat, cooking_graph
+from backend.parallel_search_fixed import (
     ParallelBinarySearcher,
     # ParallelIntervalSearcher,
     ParallelGoldenSectionSearcher
@@ -39,7 +39,7 @@ class ExactSATTimeTester:
 
 def create_test_session(num_chefs: int = 2) -> Session:
     """Create a test session with the cheesecake recipe."""
-    from main import parse_cheesecake_recipe
+    from backend.parse import parse_cheesecake_recipe
     raw_recipe = parse_cheesecake_recipe()
 
     cis: List[CookingInstruction] = []
