@@ -117,6 +117,23 @@ function App() {
       setLoading(false);
     }
   };
+
+  const removeChef = async (chefName: string) => {
+    if (!session) return;
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      const updatedSession = await api.removeChef(chefName, currentTime);
+      setSession(updatedSession);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove chef');
+      throw err; // Re-throw to be handled by the component
+    } finally {
+      setLoading(false);
+    }
+  };
   
   const handleSessionStarted = () => {
     setSessionStartTime(Math.floor(Date.now() / 1000));
@@ -268,6 +285,7 @@ function App() {
               session={session}
               currentTime={currentTime}
               onAddChef={addChef}
+              onRemoveChef={removeChef}
             />
           </div>
           

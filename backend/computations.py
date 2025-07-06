@@ -833,5 +833,30 @@ def add_chef(session: Session, chef_name: str, now: int) -> Session:
     return refresh_session(new_session, now)
 
 
+def remove_chef(session: Session, chef_name: str, now: int) -> Session:
+    """Remove a chef from the session, set sat_schedule to None, and trigger refresh."""
+    # Check if chef exists
+    if chef_name not in session.chefs_data:
+        raise ValueError(f"Chef '{chef_name}' does not exist in the session")
+    
+    # Create new chefs_data without the removed chef
+    new_chefs_data = copy.deepcopy(session.chefs_data)
+    del new_chefs_data[chef_name]
+    
+    # Create new cooking_map without the removed chef
+    new_cooking_map = copy.deepcopy(session.cooking_map)
+    if chef_name in new_cooking_map:
+        del new_cooking_map[chef_name]
+    
+    # Create a new session with the updated chef data and sat_schedule set to None
+    new_session = replace(session, 
+                         chefs_data=new_chefs_data, 
+                         cooking_map=new_cooking_map,
+                         sat_schedule=None)
+    
+    # Refresh the session to trigger SAT solving and task reassignment
+    return refresh_session(new_session, now)
+
+
 if __name__ == "__main__":
     test_example_reciple()

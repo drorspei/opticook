@@ -137,6 +137,17 @@ export const api = {
       }),
     });
   },
+
+  // Remove a chef from the current session
+  async removeChef(chefName: string, timestampSeconds: number): Promise<Session> {
+    return apiRequest<Session>('/remove-chef', {
+      method: 'POST',
+      body: JSON.stringify({
+        chef_name: chefName,
+        timestamp_seconds: timestampSeconds,
+      }),
+    });
+  },
 };
 
 export { ApiError };

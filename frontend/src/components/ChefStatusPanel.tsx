@@ -7,12 +7,14 @@ interface ChefStatusPanelProps {
   session: Session;
   currentTime: number;
   onAddChef: (chefName: string) => Promise<void>;
+  onRemoveChef?: (chefName: string) => Promise<void>;
 }
 
 export const ChefStatusPanel: React.FC<ChefStatusPanelProps> = ({
   session,
   currentTime,
-  onAddChef
+  onAddChef,
+  onRemoveChef
 }) => {
   const [isAddingChef, setIsAddingChef] = useState(false);
   const [newChefName, setNewChefName] = useState('');
@@ -118,6 +120,7 @@ export const ChefStatusPanel: React.FC<ChefStatusPanelProps> = ({
             session={session}
             chefName={chefName}
             currentTime={currentTime}
+            onRemoveChef={onRemoveChef}
           />
         ))}
       </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Clock, CheckCircle, AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { User, Clock, CheckCircle, AlertCircle, Wifi, WifiOff, UserMinus } from 'lucide-react';
 import { Session } from '../types';
 import { 
   getActiveTaskForChef, 
@@ -15,12 +15,14 @@ interface ChefStatusProps {
   session: Session;
   chefName: string;
   currentTime: number;
+  onRemoveChef?: (chefName: string) => void;
 }
 
 export const ChefStatus: React.FC<ChefStatusProps> = ({
   session,
   chefName,
-  currentTime
+  currentTime,
+  onRemoveChef
 }) => {
   const chef = session.chefs_data[chefName];
   const activeTask = getActiveTaskForChef(session, chefName);
@@ -62,6 +64,15 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
   const remainingTime = activeTask ? getRemainingTime(session, activeTask, currentTime) : 0;
   const currentAI = activeTask ? getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index) : null;
   
+  const handleRemoveChef = () => {
+    if (onRemoveChef) {
+      const confirmed = window.confirm(`Are you sure you want to remove ${chefName} from the cooking session?`);
+      if (confirmed) {
+        onRemoveChef(chefName);
+      }
+    }
+  };
+  
   return (
     <div className={`p-4 rounded-lg border ${getStatusColor()}`}>
       <div className="flex items-center justify-between mb-3">
@@ -72,13 +83,24 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
           </div>
           {getStatusIcon()}
         </div>
-        <span className={`text-sm font-medium px-2 py-1 rounded-full ${
-          chef.disconnected ? 'bg-red-100 text-red-800' :
-          isBusy ? (currentAI?.attention ? 'bg-warning-100 text-warning-800' : 'bg-primary-100 text-primary-800') :
-          'bg-success-100 text-success-800'
-        }`}>
-          {getStatusText()}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-sm font-medium px-2 py-1 rounded-full ${
+            chef.disconnected ? 'bg-red-100 text-red-800' :
+            isBusy ? (currentAI?.attention ? 'bg-warning-100 text-warning-800' : 'bg-primary-100 text-primary-800') :
+            'bg-success-100 text-success-800'
+          }`}>
+            {getStatusText()}
+          </span>
+          {onRemoveChef && (
+            <button
+              onClick={handleRemoveChef}
+              className="p-1 rounded-full hover:bg-red-100 text-red-600 hover:text-red-700 transition-colors"
+              title={`Remove ${chefName} from session`}
+            >
+              <UserMinus className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
       
       {isBusy && activeTask && currentAI && (
