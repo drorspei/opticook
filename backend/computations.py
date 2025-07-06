@@ -228,7 +228,7 @@ def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Se
 
     task = session.cooking_map[chef][inst_index]
     ai_idx = task.ai_index
-    # print(f"[DEBUG] active_ai_done: current ai_idx={ai_idx}, total AIs={len(session.recipe[inst_index].aiList)}")
+    print(f"[DEBUG] active_ai_done: current ai_idx={ai_idx}, total AIs={len(session.recipe[inst_index].aiList)}")
 
     # Ensure task.start_time is not None before using it
     if task.start_time is None:
@@ -245,15 +245,18 @@ def active_ai_done(session: Session, chef: str, inst_index: int, now: int) -> Se
     # rebuild cooking_map
     new_map = copy.deepcopy(session.cooking_map)
     if ai_idx + 1 < len(session.recipe[inst_index].aiList):
-        # print(f"[DEBUG] active_ai_done: advancing to next AI (ai_idx + 1 = {ai_idx + 1})")
+        print(f"[DEBUG] active_ai_done: advancing to next AI (ai_idx + 1 = {ai_idx + 1})")
         new_map[chef][inst_index] = ActiveTask(inst_index, ai_idx + 1, now)
+        return replace(session, cooking_map=new_map, done_tasks=new_done_tasks)
     else:
-        # print(f"[DEBUG] active_ai_done: instruction completed, removing from cooking_map")
+        print("[DEBUG] active_ai_done: instruction completed, removing from cooking_map")
         del new_map[chef][inst_index]
         if not new_map[chef]:
             del new_map[chef]
-
-    return replace(session, cooking_map=new_map, done_tasks=new_done_tasks)
+        return refresh_session(
+            replace(session, cooking_map=new_map, done_tasks=new_done_tasks),
+            now
+        )
 
 
 # Internal helper
