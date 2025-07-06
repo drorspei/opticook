@@ -799,5 +799,39 @@ def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session
     return Session(recipe, chefs_data, cooking_map, done_tasks, sat_schedule=sat_schedule)
 
 
+def add_chef(session: Session, chef_name: str, now: int) -> Session:
+    """Add a new chef to the session and recompute the SAT schedule."""
+    # Check if chef already exists
+    if chef_name in session.chefs_data:
+        raise ValueError(f"Chef '{chef_name}' already exists in the session")
+    
+    # Create new chefs_data with the additional chef
+    new_chefs_data = copy.deepcopy(session.chefs_data)
+    new_chefs_data[chef_name] = Chef(chef_name, heartbeat=None)
+    new_cooking_map = copy.deepcopy(session.cooking_map)
+    new_cooking_map[chef_name] = {}  # Add empty cooking map for new chef
+    
+    # Create a new session with the updated chef data
+    new_session = replace(session, chefs_data=new_chefs_data, cooking_map=new_cooking_map)
+    
+    # Recompute the full SAT schedule with all chefs
+    solution = sat_search(new_session, now=now)
+    chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in new_chefs_data.keys()}
+    if solution:
+        # solution is a list of (chef, start_time, task_index)
+        for chef, start_time, task_index in solution:
+            chef_to_tasks[chef].append((start_time, task_index))
+    # For each chef, sort by planned start time and keep only instruction indices
+    chef_to_tasks_ordered: Dict[str, List[int]] = {
+        chef: [task_index for start_time, task_index in sorted(tasks)]
+        for chef, tasks in chef_to_tasks.items()
+    }
+    sat_schedule = SATSchedule(chef_to_tasks_ordered)
+    new_session = replace(new_session, sat_schedule=sat_schedule)
+    
+    # Refresh the session to trigger reassignment of tasks
+    return refresh_session(new_session, now)
+
+
 if __name__ == "__main__":
     test_example_reciple()

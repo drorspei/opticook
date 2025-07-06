@@ -8,7 +8,7 @@ import os
 import pickle
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
-from computations import active_ai_done, refresh_session, start_session as compute_start_session
+from computations import active_ai_done, refresh_session, start_session as compute_start_session, add_chef
 
 app = FastAPI()
 
@@ -92,6 +92,10 @@ class CookingInstructionPayload(BaseModel):
 class AddRecipePayload(BaseModel):
     recipe_name: str
     instructions: List[CookingInstructionPayload]
+
+class AddChefPayload(BaseModel):
+    chef_name: str
+    timestamp_seconds: float = Field(..., description="Epoch seconds from client")
 
 @app.get("/api/v1/session/current/recipes", response_model=List[str])
 def list_recipes():
@@ -272,3 +276,18 @@ def delete_recipe(recipe_id: str):
     save_added_recipes()
 
     return {"message": "Recipe deleted successfully"}
+
+@app.post("/api/v1/session/current/add-chef")
+def add_chef_to_session(payload: AddChefPayload):
+    global _current_session
+    if _current_session is None:
+        raise HTTPException(status_code=404, detail="No active session")
+    
+    try:
+        new_session = add_chef(_current_session, payload.chef_name, payload.timestamp_seconds)
+        _current_session = new_session
+        return asdict(_current_session)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

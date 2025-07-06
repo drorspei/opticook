@@ -5,7 +5,7 @@ import { api, ApiError } from './api';
 import { SessionSetup } from './components/SessionSetup';
 import { AddRecipe } from './components/AddRecipe';
 import { TaskCard } from './components/TaskCard';
-import { ChefStatus } from './components/ChefStatus';
+import { ChefStatusPanel } from './components/ChefStatusPanel';
 import { 
   getTotalRecipeTime, 
   getCompletedRecipeTime, 
@@ -96,6 +96,23 @@ function App() {
     } catch (err) {
       setError('Failed to reset session');
       console.error('Error resetting session:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const addChef = async (chefName: string) => {
+    if (!session) return;
+    
+    setLoading(true);
+    setError('');
+    
+    try {
+      const updatedSession = await api.addChef(chefName, currentTime);
+      setSession(updatedSession);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add chef');
+      throw err; // Re-throw to be handled by the component
     } finally {
       setLoading(false);
     }
@@ -247,17 +264,11 @@ function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Chef Status */}
           <div className="lg:col-span-1">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Chef Status</h2>
-            <div className="space-y-4">
-              {Object.keys(session.chefs_data).map((chefName) => (
-                <ChefStatus
-                  key={chefName}
-                  session={session}
-                  chefName={chefName}
-                  currentTime={currentTime}
-                />
-              ))}
-            </div>
+            <ChefStatusPanel
+              session={session}
+              currentTime={currentTime}
+              onAddChef={addChef}
+            />
           </div>
           
           {/* Tasks */}

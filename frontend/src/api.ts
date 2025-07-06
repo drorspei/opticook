@@ -126,6 +126,17 @@ export const api = {
 
     return response.json();
   },
+
+  // Add a chef to the current session
+  async addChef(chefName: string, timestampSeconds: number): Promise<Session> {
+    return apiRequest<Session>('/add-chef', {
+      method: 'POST',
+      body: JSON.stringify({
+        chef_name: chefName,
+        timestamp_seconds: timestampSeconds,
+      }),
+    });
+  },
 };
 
 export { ApiError };
