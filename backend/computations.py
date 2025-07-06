@@ -155,6 +155,7 @@ def cooking_graph(session: Session) -> Tuple[Set[int], List[Tuple[int, int]], in
     for inst in session.recipe:
         if not is_instruction_completed(inst.index):
             vertices.add(inst.index)
+
         # Also include instructions that are currently being worked on
         for chef_tasks in session.cooking_map.values():
             if inst.index in chef_tasks:
@@ -567,7 +568,7 @@ def session2sat(session: Session, time_ub: int, now: int):
         dst_start, dst_end = time_windows[dst]
 
         # Skip if windows already ensure correct ordering
-        if dst_start >= dep_start + dur_dep:
+        if dst_start >= dep_end + dur_dep:
             continue
 
         for chef1 in chefs:
@@ -743,8 +744,7 @@ def refresh_session(session: Session, now: int) -> Session:
         made_new_assignments = False
         for chef in eligible_chefs:
             starts = [tpl for tpl in solution if tpl[0] == chef and tpl[1] == 0]
-            if starts:
-                inst_idx = starts[0][2]
+            for _, _, inst_idx in starts:
                 if inst_idx not in active_instructions:
                     print(f"[DEBUG] refresh_session: assigning instruction {inst_idx} to {chef} at time {now} (fallback)")
                     if chef not in new_map:
@@ -772,8 +772,53 @@ def test_example_reciple():
             0
         )[::-1]
     )
-    print(solution)
     assert solution is not False
+
+
+def test_parallel_recipe():
+    from data_models import Chef, AtomicInstruction
+    s = refresh_session(
+        Session(
+            recipe=[
+                CookingInstruction(
+                    index=0,
+                    aiList=[
+                        AtomicInstruction(
+                            attention=True,
+                            duration=60,
+                            description='chop onions'
+                        ),
+                    ],
+                    dependencies=[]
+                ),
+                CookingInstruction(
+                    index=1,
+                    aiList=[
+                        AtomicInstruction(
+                            attention=False,
+                            duration=60,
+                            description='breath'
+                        ),
+                    ],
+                    dependencies=[]
+                )
+            ],
+            chefs_data={
+                'Alice': Chef(
+                    name='Alice',
+                    addr=None,
+                    heartbeat=None,
+                    disconnected=False
+                ),
+            },
+            cooking_map={
+                'Alice': {},
+            },
+            done_tasks={}
+        ),
+        now=0
+    )
+    assert len(s.cooking_map["Alice"]) == 2
 
 
 def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session:
@@ -859,4 +904,5 @@ def remove_chef(session: Session, chef_name: str, now: int) -> Session:
 
 
 if __name__ == "__main__":
-    test_example_reciple()
+    #test_example_reciple()
+    test_parallel_recipe()

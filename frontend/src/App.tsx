@@ -214,7 +214,7 @@ function App() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               <ChefHat className="w-8 h-8 text-primary-600" />
-              <h1 className="text-xl font-bold text-gray-900">Opticook</h1>
+              {/* <h1 className="text-xl font-bold text-gray-900">Opticook</h1> */}
             </div>
             
             <div className="flex items-center gap-4">
@@ -253,7 +253,7 @@ function App() {
           </div>
         )}
         
-        {/* Progress Overview */}
+        {/* Progress Overview 
         <div className="card mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Session Progress</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -277,6 +277,7 @@ function App() {
             />
           </div>
         </div>
+        */}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Chef Status */}
