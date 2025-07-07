@@ -107,6 +107,7 @@ class RemoveChefPayload(BaseModel):
 class RecipeFromUrlPayload(BaseModel):
     url: str
     llm_model: str = "gpt-4.1-nano"
+    api_key: str = None
 
 @app.get("/api/v1/session/current/recipes", response_model=List[str])
 def list_recipes():
@@ -320,8 +321,8 @@ def remove_chef_from_session(payload: RemoveChefPayload):
 
 @app.post("/api/v1/recipes/from-url")
 def recipe_from_url(payload: RecipeFromUrlPayload = Body(...)):
-    print(f"[DEBUG] API /api/v1/recipes/from-url called with url={payload.url} and llm_model={payload.llm_model}")
-    result = retrieve_recipe_from_url(payload.url, payload.llm_model)
+    print(f"[DEBUG] API /api/v1/recipes/from-url called with url={payload.url} and llm_model={payload.llm_model} and api_key={'***' if payload.api_key else None}")
+    result = retrieve_recipe_from_url(payload.url, payload.llm_model, payload.api_key)
     if not result:
         return {"success": False, "error": "Failed to retrieve or process recipe. See server logs for details."}
     return {"success": True, "recipe": result}

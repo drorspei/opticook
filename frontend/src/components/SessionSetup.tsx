@@ -20,6 +20,9 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
   const [urlError, setUrlError] = useState('');
   const [urlRecipe, setUrlRecipe] = useState<any>(null);
   const [urlRecipeName, setUrlRecipeName] = useState('');
+  const [showLlmFields, setShowLlmFields] = useState(false);
+  const [llmModel, setLlmModel] = useState('gpt-4.1-nano');
+  const [llmApiKey, setLlmApiKey] = useState('');
 
   useEffect(() => {
     loadRecipes();
@@ -90,7 +93,7 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
     setUrlError('');
     setUrlRecipe(null);
     try {
-      const result = await api.getRecipeFromUrl(urlInput);
+      const result = await api.getRecipeFromUrl(urlInput, llmModel, llmApiKey);
       if (result.success) {
         setUrlRecipe(result.recipe);
       } else {
@@ -252,6 +255,33 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
               onChange={e => setUrlInput(e.target.value)}
               disabled={urlLoading}
             />
+            <button
+              className="btn-secondary w-full mb-3"
+              onClick={() => setShowLlmFields(v => !v)}
+              type="button"
+            >
+              {showLlmFields ? 'Hide LLM model and API key' : 'Add LLM model and API key'}
+            </button>
+            {showLlmFields && (
+              <div className="mb-3">
+                <input
+                  type="text"
+                  className="w-full p-2 border border-gray-300 rounded mb-2"
+                  placeholder="LLM model (e.g., gpt-4.1-nano)"
+                  value={llmModel}
+                  onChange={e => setLlmModel(e.target.value)}
+                  disabled={urlLoading}
+                />
+                <input
+                  type="text"
+                  className="w-full p-2 border border-gray-300 rounded"
+                  placeholder="API key (optional)"
+                  value={llmApiKey}
+                  onChange={e => setLlmApiKey(e.target.value)}
+                  disabled={urlLoading}
+                />
+              </div>
+            )}
             <button
               className="btn-primary w-full mb-3"
               onClick={handleUrlRecipe}

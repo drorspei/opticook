@@ -150,13 +150,15 @@ export const api = {
   },
 
   // Retrieve a recipe from a URL using the backend LLM pipeline
-  async getRecipeFromUrl(url: string, llmModel: string = 'gpt-4.1-nano'): Promise<{ success: boolean; recipe?: any; error?: string }> {
+  async getRecipeFromUrl(url: string, llmModel: string = 'gpt-4.1-nano', apiKey?: string): Promise<{ success: boolean; recipe?: any; error?: string }> {
+    const body: any = { url, llm_model: llmModel };
+    if (apiKey) body.api_key = apiKey;
     const response = await fetch('/api/v1/recipes/from-url', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url, llm_model: llmModel }),
+      body: JSON.stringify(body),
     });
     if (!response.ok) {
       throw new ApiError(response.status, `API request failed: ${response.statusText}`);

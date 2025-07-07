@@ -11,7 +11,7 @@ from typing import Dict, List, Set, Tuple
 from pycryptosat import Solver
 
 from dataclasses import replace
-from data_models import CookingInstruction, ActiveTask, Session, DoneTask, SATSchedule, Chef
+from data_models import CookingInstruction, ActiveTask, Session, DoneTask, SATSchedule, Chef, session_with_quanta_durations, time_in_units
 
 
 # In[8]:
@@ -684,11 +684,14 @@ def _binarysearch(f, lb: int, ub: int):
 def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
     """High‑level entry: minimum‑UB SAT schedule or ``False``."""
 
-    ub = cooking_graph(session)[2]
+    session_quanta = session_with_quanta_durations(session)
+    # Convert 'now' from seconds to quanta to match the quanta-converted session
+    now_quanta = time_in_units(now)
+    ub = cooking_graph(session_quanta)[2]
     print(f"done cooking graph, ub={ub}")
     if lb >= ub:
         return False
-    return _binarysearch(lambda t: graph2solve_with_timeout(session, t, now, timeout), lb, ub)
+    return _binarysearch(lambda t: graph2solve_with_timeout(session_quanta, t, now_quanta, timeout), lb, ub)
 
 
 # ---------------------------------------------------------------------------
@@ -734,7 +737,10 @@ def refresh_session(session: Session, now: int) -> Session:
 
     # Fallback: run SAT solver as before (should not be needed)
     print(f"[DEBUG] refresh_session: no SATSchedule, falling back to SAT solver")
-    solution = sat_search(session, now)
+    session_quanta = session_with_quanta_durations(session)
+    # Convert 'now' from seconds to quanta to match the quanta-converted session
+    now_quanta = time_in_units(now)
+    solution = sat_search(session_quanta, now_quanta)
     if solution:
         print(f"[DEBUG] refresh_session: Found valid solution (fallback)")
         new_map = copy.deepcopy(session.cooking_map)
@@ -829,7 +835,10 @@ def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session
     session = Session(recipe, chefs_data, cooking_map, done_tasks)
 
     # Run SAT solver to get the full schedule
-    solution = sat_search(session, now=0)
+    session_quanta = session_with_quanta_durations(session)
+    # Convert 'now' from seconds to quanta to match the quanta-converted session
+    now_quanta = time_in_units(0)  # start_session always uses now=0
+    solution = sat_search(session_quanta, now_quanta)
     chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in chefs}
     if solution:
         # solution is a list of (chef, start_time, task_index)
@@ -860,7 +869,10 @@ def add_chef(session: Session, chef_name: str, now: int) -> Session:
     new_session = replace(session, chefs_data=new_chefs_data, cooking_map=new_cooking_map)
     
     # Recompute the full SAT schedule with all chefs
-    solution = sat_search(new_session, now=now)
+    session_quanta = session_with_quanta_durations(new_session)
+    # Convert 'now' from seconds to quanta to match the quanta-converted session
+    now_quanta = time_in_units(now)
+    solution = sat_search(session_quanta, now_quanta)
     chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in new_chefs_data.keys()}
     if solution:
         # solution is a list of (chef, start_time, task_index)

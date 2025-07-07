@@ -42,7 +42,7 @@ def find_recipe_object(data):
         return data
     return None
 
-def retrieve_recipe_from_url(url, llm_model="gpt-4.1-nano"):
+def retrieve_recipe_from_url(url, llm_model="gpt-4.1-nano", api_key=None):
     """
     Retrieve and process a recipe from a given URL.
     Step 1: Extract recipe JSON-LD from the page.
@@ -75,6 +75,7 @@ You are given a recipe in JSON-LD format extracted from a web page.\nYour task i
                 messages=[{"role": "user", "content": phase1_prompt}],
                 max_tokens=2048,
                 temperature=0.2,
+                **({"api_key": api_key} if api_key else {})
             )
             ci_json = phase1_response["choices"][0]["message"]["content"]
             print(f"[DEBUG] LLM raw output (Phase 1): {ci_json!r}")
@@ -118,6 +119,7 @@ You are given a recipe in JSON-LD format extracted from a web page.\nYour task i
                     messages=[{"role": "user", "content": phase2_prompt}],
                     max_tokens=2048,
                     temperature=0.2,
+                    **({"api_key": api_key} if api_key else {})
                 )
                 ai_json = phase2_response["choices"][0]["message"]["content"]
                 print(f"[DEBUG] LLM raw output (Phase 2, all ci): {ai_json!r}")
