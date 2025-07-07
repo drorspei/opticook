@@ -148,6 +148,21 @@ export const api = {
       }),
     });
   },
+
+  // Retrieve a recipe from a URL using the backend LLM pipeline
+  async getRecipeFromUrl(url: string, llmModel: string = 'gpt-4.1-nano'): Promise<{ success: boolean; recipe?: any; error?: string }> {
+    const response = await fetch('/api/v1/recipes/from-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url, llm_model: llmModel }),
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, `API request failed: ${response.statusText}`);
+    }
+    return response.json();
+  },
 };
 
 export { ApiError };

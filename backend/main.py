@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from dataclasses import asdict
@@ -6,11 +6,14 @@ from typing import List, Dict, Optional, Tuple
 from parse import parse_cheesecake_recipe
 import os
 import pickle
+from dotenv import load_dotenv
 
 from data_models import Chef, AtomicInstruction, CookingInstruction, Session, DoneTask
 from computations import active_ai_done, refresh_session, start_session as compute_start_session, add_chef, remove_chef
+from retrive import retrieve_recipe_from_url
 
 app = FastAPI()
+load_dotenv()
 
 # In-memory recipe store: map recipe_id to raw recipe definitions
 RECIPE_STORE: Dict[str, List[Dict]] = {
@@ -100,6 +103,10 @@ class AddChefPayload(BaseModel):
 class RemoveChefPayload(BaseModel):
     chef_name: str
     timestamp_seconds: float = Field(..., description="Epoch seconds from client")
+
+class RecipeFromUrlPayload(BaseModel):
+    url: str
+    llm_model: str = "gpt-4.1-nano"
 
 @app.get("/api/v1/session/current/recipes", response_model=List[str])
 def list_recipes():
@@ -310,3 +317,11 @@ def remove_chef_from_session(payload: RemoveChefPayload):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/recipes/from-url")
+def recipe_from_url(payload: RecipeFromUrlPayload = Body(...)):
+    print(f"[DEBUG] API /api/v1/recipes/from-url called with url={payload.url} and llm_model={payload.llm_model}")
+    result = retrieve_recipe_from_url(payload.url, payload.llm_model)
+    if not result:
+        return {"success": False, "error": "Failed to retrieve or process recipe. See server logs for details."}
+    return {"success": True, "recipe": result}

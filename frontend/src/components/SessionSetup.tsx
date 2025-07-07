@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChefHat, Users, Play, Loader, Plus, Edit } from 'lucide-react';
+import { ChefHat, Users, Play, Loader, Plus, Edit, Link } from 'lucide-react';
 import { api, ApiError } from '../api';
 
 interface SessionSetupProps {
@@ -14,6 +14,12 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
   const [chefNames, setChefNames] = useState<string[]>(['Alice', 'Bob']);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  const [showUrlDialog, setShowUrlDialog] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [urlError, setUrlError] = useState('');
+  const [urlRecipe, setUrlRecipe] = useState<any>(null);
+  const [urlRecipeName, setUrlRecipeName] = useState('');
 
   useEffect(() => {
     loadRecipes();
@@ -79,6 +85,25 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
     }
   };
 
+  const handleUrlRecipe = async () => {
+    setUrlLoading(true);
+    setUrlError('');
+    setUrlRecipe(null);
+    try {
+      const result = await api.getRecipeFromUrl(urlInput);
+      if (result.success) {
+        setUrlRecipe(result.recipe);
+      } else {
+        setUrlError(result.error || 'Failed to retrieve recipe from URL');
+      }
+    } catch (err) {
+      setUrlError('Failed to retrieve recipe from URL');
+      console.error('Error retrieving recipe from URL:', err);
+    } finally {
+      setUrlLoading(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="card">
@@ -132,6 +157,15 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
               >
                 <Plus className="w-5 h-5" />
                 Add New Recipe
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUrlDialog(true)}
+                className="flex-1 p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+                disabled={loading}
+              >
+                <Link className="w-5 h-5" />
+                Import Recipe from URL
               </button>
             </div>
           </div>
@@ -198,6 +232,88 @@ export const SessionSetup: React.FC<SessionSetupProps> = ({ onSessionStarted, on
           </button>
         </div>
       </div>
+      {/* URL Dialog */}
+      {showUrlDialog && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-40 z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-lg relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
+              onClick={() => { setShowUrlDialog(false); setUrlInput(''); setUrlError(''); setUrlRecipe(null); setUrlRecipeName(''); }}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2 className="text-xl font-bold mb-4">Import Recipe from URL</h2>
+            <input
+              type="text"
+              className="w-full p-3 border border-gray-300 rounded-lg mb-3"
+              placeholder="Paste recipe URL here..."
+              value={urlInput}
+              onChange={e => setUrlInput(e.target.value)}
+              disabled={urlLoading}
+            />
+            <button
+              className="btn-primary w-full mb-3"
+              onClick={handleUrlRecipe}
+              disabled={urlLoading || !urlInput}
+            >
+              {urlLoading ? <Loader className="w-5 h-5 animate-spin inline-block mr-2" /> : <Link className="w-5 h-5 inline-block mr-2" />}
+              Fetch Recipe
+            </button>
+            {urlError && <div className="mb-2 text-red-600">{urlError}</div>}
+            {urlRecipe && (
+              <div className="mb-2 p-3 bg-green-50 border border-green-200 rounded">
+                <div className="font-semibold mb-1">Recipe structure fetched!</div>
+                <pre className="text-xs overflow-x-auto max-h-40">{JSON.stringify(urlRecipe, null, 2)}</pre>
+                <div className="mt-2">
+                  <input
+                    type="text"
+                    className="w-full p-2 border border-gray-300 rounded mb-2"
+                    placeholder="Enter recipe name"
+                    value={urlRecipeName}
+                    onChange={e => setUrlRecipeName(e.target.value)}
+                  />
+                  <button
+                    className="btn-primary w-full"
+                    onClick={async () => {
+                      if (!urlRecipeName.trim()) {
+                        setUrlError('Please enter a recipe name.');
+                        return;
+                      }
+                      try {
+                        // Convert urlRecipe to the format expected by addRecipe
+                        const instructions = (Array.isArray(urlRecipe) ? urlRecipe : urlRecipe.ci || urlRecipe.instructions || []).map((ci: any) => ({
+                          aiList: (ci.ai || ci.aiList || []).map((ai: any) => ({
+                            description: ai.description,
+                            attention: ai.attention,
+                            duration_seconds: ai.duration_seconds || ai.duration || 30
+                          })),
+                          dependencies: ci.dependencies || []
+                        }));
+                        await api.addRecipe({
+                          recipe_name: urlRecipeName.trim(),
+                          instructions
+                        });
+                        setShowUrlDialog(false);
+                        setUrlInput('');
+                        setUrlError('');
+                        setUrlRecipe(null);
+                        setUrlRecipeName('');
+                        loadRecipes();
+                      } catch (err) {
+                        setUrlError('Failed to save recipe.');
+                        console.error('Error saving imported recipe:', err);
+                      }
+                    }}
+                  >
+                    Save Recipe
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
