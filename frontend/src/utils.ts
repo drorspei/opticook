@@ -50,9 +50,17 @@ export function getActiveTaskForChef(session: Session, chefName: string): Active
   const chefTasks = session.cooking_map[chefName];
   if (!chefTasks) return null;
   
-  // Return the first active task (there should only be one per chef)
+  // Return the first active task (for backward compatibility)
   const taskEntries = Object.entries(chefTasks);
   return taskEntries.length > 0 ? taskEntries[0][1] : null;
+}
+
+export function getActiveTasksForChef(session: Session, chefName: string): ActiveTask[] {
+  const chefTasks = session.cooking_map[chefName];
+  if (!chefTasks) return [];
+  
+  // Return all active tasks for this chef
+  return Object.values(chefTasks);
 }
 
 export function getCurrentAI(session: Session, instructionIndex: number, aiIndex: number): AtomicInstruction {
@@ -68,8 +76,8 @@ export function getRemainingTime(session: Session, task: ActiveTask, now: number
 }
 
 export function isChefBusy(session: Session, chefName: string): boolean {
-  const activeTask = getActiveTaskForChef(session, chefName);
-  return activeTask !== null;
+  const activeTasks = getActiveTasksForChef(session, chefName);
+  return activeTasks.length > 0;
 }
 
 export function isChefAvailable(session: Session, chefName: string): boolean {
