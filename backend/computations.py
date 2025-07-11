@@ -694,12 +694,43 @@ def sat_search(session: Session, now: int = 0, lb: int = 0, timeout: int = 60):
     return _binarysearch(lambda t: graph2solve_with_timeout(session_quanta, t, now_quanta, timeout), lb, ub)
 
 
+
+def verify_task_for_chef(session: Session, chef: str, instruction_index: int, now: int) -> bool:
+    """Verify if the given instruction attention span overlaps with any other instruction's attention span for the same chef.
+    this is done by comparing with the attention span of the instructions of the chef in the session cooking map.
+    """
+    overlap = False
+    for task in session.cooking_map[chef].values():
+        ai = session.recipe[task.instruction_index].aiList[task.ai_index]
+        remaining = max(0, ai.duration - int(now - (task.start_time or now)))
+        updated_ai = replace(ai, duration=remaining)
+        new_ai_list = [updated_ai] + session.recipe[task.instruction_index].aiList[task.ai_index + 1 :]
+        updated_instruction = replace(session.recipe[task.instruction_index], aiList=new_ai_list)
+        if 0 in interval_union(forbidden_intervals_shifts(attention_span(updated_instruction), 
+        attention_span(session.recipe[instruction_index]))):
+            overlap = True
+    
+    if overlap:
+        return False
+
+    dependencies_clear = True
+    for dep in session.recipe[instruction_index].dependencies:
+        if dep not in session.done_tasks or len(session.done_tasks[dep].time_data) < len(session.recipe[dep].aiList):
+            dependencies_clear = False
+            break
+    
+    if not dependencies_clear:
+        return False
+
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Session-mutation helper – refresh & schedule
 # ---------------------------------------------------------------------------
 
 def refresh_session(session: Session, now: int) -> Session:
-    """Assign the next available instruction from the chef's SATSchedule list that is not already active or done."""
+    """Assign the next available instruction from the chef's SATSchedule list that is not already active or done, and only if verify_task_for_chef passes."""
     eligible_chefs = {
         c for c in session.chefs_data if not _chef_needs_attention(session, c)
     }
@@ -722,13 +753,16 @@ def refresh_session(session: Session, now: int) -> Session:
                     continue
                 if chef in new_map and task_index in new_map[chef]:
                     continue
-                # Assign this instruction to the chef
-                print(f"[DEBUG] refresh_session: assigning instruction {task_index} to {chef} (from SATSchedule order)")
-                if chef not in new_map:
-                    new_map[chef] = {}
-                new_map[chef][task_index] = ActiveTask(task_index, 0, now)
-                made_new_assignments = True
-                break  # Only assign one new task per chef per refresh
+                # Only assign if verify_task_for_chef passes
+                if verify_task_for_chef(session, chef, task_index, now):
+                    print(f"[DEBUG] refresh_session: assigning instruction {task_index} to {chef} (from SATSchedule order, verified)")
+                    if chef not in new_map:
+                        new_map[chef] = {}
+                    new_map[chef][task_index] = ActiveTask(task_index, 0, now)
+                    made_new_assignments = True
+                else:
+                    print(f"[DEBUG] refresh_session: verify_task_for_chef failed for chef {chef}, instruction {task_index}")
+                break  # Only consider the next scheduled instruction per chef per refresh
         if made_new_assignments:
             return replace(session, cooking_map=new_map)
         else:
