@@ -773,10 +773,7 @@ def refresh_session(session: Session, now: int) -> Session:
 
     # Fallback: run SAT solver as before (should not be needed)
     print(f"[DEBUG] refresh_session: no SATSchedule, falling back to SAT solver")
-    session_quanta = session_with_quanta_durations(session)
-    # Convert 'now' from seconds to quanta to match the quanta-converted session
-    now_quanta = time_in_units(now)
-    solution = sat_search(session_quanta, now_quanta)
+    solution = sat_search(session, now)
     if solution:
         print(f"[DEBUG] refresh_session: Found valid solution (fallback)")
         new_map = copy.deepcopy(session.cooking_map)
@@ -870,11 +867,7 @@ def start_session(recipe: List[CookingInstruction], chefs: List[str]) -> Session
     done_tasks: Dict[int, DoneTask] = {}
     session = Session(recipe, chefs_data, cooking_map, done_tasks)
 
-    # Run SAT solver to get the full schedule
-    session_quanta = session_with_quanta_durations(session)
-    # Convert 'now' from seconds to quanta to match the quanta-converted session
-    now_quanta = time_in_units(0)  # start_session always uses now=0
-    solution = sat_search(session_quanta, now_quanta)
+    solution = sat_search(session, 0)
     chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in chefs}
     if solution:
         # solution is a list of (chef, start_time, task_index)
@@ -905,10 +898,7 @@ def add_chef(session: Session, chef_name: str, now: int) -> Session:
     new_session = replace(session, chefs_data=new_chefs_data, cooking_map=new_cooking_map)
     
     # Recompute the full SAT schedule with all chefs
-    session_quanta = session_with_quanta_durations(new_session)
-    # Convert 'now' from seconds to quanta to match the quanta-converted session
-    now_quanta = time_in_units(now)
-    solution = sat_search(session_quanta, now_quanta)
+    solution = sat_search(session, 0)
     chef_to_tasks: Dict[str, List[Tuple[int, int, int]]] = {name: [] for name in new_chefs_data.keys()}
     if solution:
         # solution is a list of (chef, start_time, task_index)
