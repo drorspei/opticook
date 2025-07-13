@@ -700,6 +700,8 @@ def verify_task_for_chef(session: Session, chef: str, instruction_index: int, no
     this is done by comparing with the attention span of the instructions of the chef in the session cooking map.
     """
     overlap = False
+    if chef not in session.cooking_map:
+        return True
     for task in session.cooking_map[chef].values():
         ai = session.recipe[task.instruction_index].aiList[task.ai_index]
         remaining = max(0, ai.duration - int(now - (task.start_time or now)))
