@@ -35,10 +35,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     (tasks as Record<number, ActiveTask>)[instructionIndex] !== undefined
   )?.[0];
   
+<<<<<<< HEAD
   // Get the specific task for this instruction
   const activeTask = activeChef && session.cooking_map[activeChef] ? 
     session.cooking_map[activeChef][instructionIndex] : null;
   const isActive = activeTask !== null;
+=======
+  // Check if this specific instruction is active for the chef
+  const isActive = activeChef && session.cooking_map[activeChef][instructionIndex] !== undefined;
+  
+  // Get the active task for this specific instruction
+  const activeTask = isActive ? session.cooking_map[activeChef][instructionIndex] : null;
+>>>>>>> 28f1218 (Frontend: Fix TaskCard to show Mark Done button for each active task per chef (not just first task))
   
   // Get current AI if task is active
   const currentAI = isActive && activeTask ? getCurrentAI(session, instructionIndex, activeTask.ai_index) : null;
