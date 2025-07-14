@@ -40,7 +40,7 @@ function App() {
     if (session) {
       const interval = setInterval(() => {
         refreshSession();
-      }, 5000); // Refresh every 5 seconds
+      }, 1000); // Refresh every 1 second
       return () => clearInterval(interval);
     }
   }, [session]);

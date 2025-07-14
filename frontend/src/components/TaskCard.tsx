@@ -21,6 +21,71 @@ interface TaskCardProps {
   urgentMessage?: string;
 }
 
+// Emoji mapping for common ingredients and tools
+const emojiMap: Record<string, string> = {
+  carrot: '🥕',
+  egg: '🥚',
+  eggs: '🥚',
+  milk: '🥛',
+  beef: '🥩',
+  chicken: '🍗',
+  onion: '🧅',
+  garlic: '🧄',
+  cheese: '🧀',
+  tomato: '🍅',
+  potato: '🥔',
+  bread: '🍞',
+  fish: '🐟',
+  rice: '🍚',
+  pasta: '🍝',
+  oven: '🔥',
+  stove: '🍳',
+  pan: '🍳',
+  pot: '🥘',
+  water: '💧',
+  oil: '🛢️',
+  butter: '🧈',
+  salt: '🧂',
+  pepper: '🌶️',
+  candy: '🍬',
+  lemon: '🍋',
+  lime: '🍋',
+  apple: '🍏',
+  orange: '🍊',
+  lettuce: '🥬',
+  cucumber: '🥒',
+  mushroom: '🍄',
+  bacon: '🥓',
+  sausage: '🌭',
+  shrimp: '🦐',
+  crab: '🦀',
+  corn: '🌽',
+  broccoli: '🥦',
+  cake: '🍰',
+  chocolate: '🍫',
+  ice: '🧊',
+  grill: '🍖',
+  knife: '🔪',
+  spoon: '🥄',
+  fork: '🍴',
+};
+
+// Placeholder for user implementation
+function getFirstMatchingEmoji(description: string): string | undefined {
+  const lowerDesc = description.toLowerCase();
+  console.log("Checking description:", lowerDesc);
+  for (const [key, emo] of Object.entries(emojiMap)) {
+    console.log(`Checking key: ${key}`);
+    if (lowerDesc.includes(key)) {
+      console.log(`Match found! Key: ${key}, Emoji: ${emo}`);
+      return emo;
+    }
+  }
+  console.log("No emoji match found for:", lowerDesc);
+  return undefined;
+}
+
+
 export const TaskCard: React.FC<TaskCardProps> = ({
   session,
   instructionIndex,
@@ -50,6 +115,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   
   // Check if current AI needs attention
   const needsAttention = currentAI?.attention || false;
+  
+  // Find an emoji for the main instruction description
+  const emoji = getFirstMatchingEmoji(instruction.aiList[0]?.description || '');
   
   const getStatusIcon = () => {
     if (isCompleted) {
@@ -87,22 +155,22 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           {urgentMessage}
         </div>
       )}
-      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center justify-between mb-3">
+        {/* Left: Status icon and step */}
         <div className="flex items-center gap-2">
           {getStatusIcon()}
+          {emoji && <span className="text-4xl">{emoji}</span>}
           <h3 className="font-semibold text-gray-900">
             Step {instructionIndex + 1}
           </h3>
         </div>
-        <span className={`text-sm font-medium px-2 py-1 rounded-full ${
-          isCompleted ? 'bg-success-100 text-success-800' :
-          isActive ? (needsAttention ? 'bg-warning-100 text-warning-800' : 'bg-primary-100 text-primary-800') :
-          'bg-gray-100 text-gray-600'
-        }`}>
+        
+        {/* Right: Status text */}
+        <span className={`text-sm font-medium px-2 py-1 rounded-full ...`}>
           {getStatusText()}
         </span>
       </div>
-      
+            
       <div className="space-y-2">
         {instruction.aiList.map((ai, aiIndex) => {
           const isCurrentAI = isActive && activeTask?.ai_index === aiIndex;
@@ -184,6 +252,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           Mark Step Complete
         </button>
       )}
+      
     </div>
   );
 }; 
