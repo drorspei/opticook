@@ -35,8 +35,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     (tasks as Record<number, ActiveTask>)[instructionIndex] !== undefined
   )?.[0];
   
-  const activeTask = activeChef ? getActiveTaskForChef(session, activeChef) : null;
-  const isActive = activeTask?.instruction_index === instructionIndex;
+  // Get the specific task for this instruction
+  const activeTask = activeChef && session.cooking_map[activeChef] ? 
+    session.cooking_map[activeChef][instructionIndex] : null;
+  const isActive = activeTask !== null;
   
   // Get current AI if task is active
   const currentAI = isActive && activeTask ? getCurrentAI(session, instructionIndex, activeTask.ai_index) : null;

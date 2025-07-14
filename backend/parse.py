@@ -46,7 +46,7 @@ def parse_cheesecake_recipe() -> List[Dict]:
             "index": task['index'],
             "aiList": [{
                 "attention": requires_attention,
-                "duration_seconds": time_in_units(int(task['time'])),
+                "duration_seconds": int(task['time']),
                 "description": task['title']
             }],
             "dependencies": dependencies.get(task['index'], [])

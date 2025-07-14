@@ -2,7 +2,8 @@ import React from 'react';
 import { User, Clock, CheckCircle, AlertCircle, Wifi, WifiOff, UserMinus } from 'lucide-react';
 import { Session } from '../types';
 import { 
-  getActiveTaskForChef, 
+  getActiveTaskForChef,
+  getActiveTasksForChef, 
   getCurrentAI, 
   getRemainingTime,
   isChefBusy,
@@ -25,7 +26,7 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
   onRemoveChef
 }) => {
   const chef = session.chefs_data[chefName];
-  const activeTask = getActiveTaskForChef(session, chefName);
+  const activeTasks = getActiveTasksForChef(session, chefName);
   const isBusy = isChefBusy(session, chefName);
   const isAvailable = isChefAvailable(session, chefName);
   
@@ -34,8 +35,12 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
       return <WifiOff className="w-5 h-5 text-red-500" />;
     }
     if (isBusy) {
-      const currentAI = activeTask ? getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index) : null;
-      if (currentAI?.attention) {
+      // Check if any task needs attention
+      const hasAttentionTask = activeTasks.some(task => {
+        const ai = getCurrentAI(session, task.instruction_index, task.ai_index);
+        return ai?.attention;
+      });
+      if (hasAttentionTask) {
         return <AlertCircle className="w-5 h-5 text-warning-600 animate-pulse" />;
       }
       return <Clock className="w-5 h-5 text-primary-600 animate-pulse" />;
@@ -46,7 +51,11 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
   const getStatusText = () => {
     if (chef.disconnected) return 'Disconnected';
     if (isBusy) {
-      const currentAI = activeTask ? getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index) : null;
+      const taskCount = activeTasks.length;
+      if (taskCount > 1) {
+        return `${taskCount} Active Tasks`;
+      }
+      const currentAI = activeTasks[0] ? getCurrentAI(session, activeTasks[0].instruction_index, activeTasks[0].ai_index) : null;
       return currentAI?.attention ? 'Manual Task' : 'Auto Task';
     }
     return 'Available';
@@ -55,14 +64,14 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
   const getStatusColor = () => {
     if (chef.disconnected) return 'text-red-600 bg-red-50 border-red-200';
     if (isBusy) {
-      const currentAI = activeTask ? getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index) : null;
-      return currentAI?.attention ? 'text-warning-600 bg-warning-50 border-warning-200' : 'text-primary-600 bg-primary-50 border-primary-200';
+      const hasAttentionTask = activeTasks.some(task => {
+        const ai = getCurrentAI(session, task.instruction_index, task.ai_index);
+        return ai?.attention;
+      });
+      return hasAttentionTask ? 'text-warning-600 bg-warning-50 border-warning-200' : 'text-primary-600 bg-primary-50 border-primary-200';
     }
     return 'text-success-600 bg-success-50 border-success-200';
   };
-  
-  const remainingTime = activeTask ? getRemainingTime(session, activeTask, currentTime) : 0;
-  const currentAI = activeTask ? getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index) : null;
   
   const handleRemoveChef = () => {
     if (onRemoveChef) {
@@ -86,7 +95,7 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
         <div className="flex items-center gap-2">
           <span className={`text-sm font-medium px-2 py-1 rounded-full ${
             chef.disconnected ? 'bg-red-100 text-red-800' :
-            isBusy ? (currentAI?.attention ? 'bg-warning-100 text-warning-800' : 'bg-primary-100 text-primary-800') :
+            isBusy ? (activeTasks.some(task => getCurrentAI(session, task.instruction_index, task.ai_index)?.attention) ? 'bg-warning-100 text-warning-800' : 'bg-primary-100 text-primary-800') :
             'bg-success-100 text-success-800'
           }`}>
             {getStatusText()}
@@ -103,32 +112,37 @@ export const ChefStatus: React.FC<ChefStatusProps> = ({
         </div>
       </div>
       
-      {isBusy && activeTask && currentAI && (
-        <div className="space-y-2">
+      {isBusy && activeTasks.length > 0 && (
+        <div className="space-y-3">
           <div className="text-sm">
-            <span className="font-medium">Current Task:</span>
-            <div className="mt-1 p-2 bg-white rounded border">
-              <div className="flex items-center justify-between">
-                <span className="font-medium">Step {activeTask.instruction_index + 1}: {currentAI.description}</span>
-                <span className="text-gray-500">{formatDuration(currentAI.duration)}</span>
-              </div>
-              {currentAI.attention && (
-                <div className="mt-1 text-warning-700 text-xs flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" />
-                  Manual attention required
-                </div>
-              )}
+            <span className="font-medium">{activeTasks.length > 1 ? 'Active Tasks:' : 'Current Task:'}</span>
+            <div className="space-y-2 mt-1">
+              {activeTasks.map((task) => {
+                const currentAI = getCurrentAI(session, task.instruction_index, task.ai_index);
+                const remainingTime = getRemainingTime(session, task, currentTime);
+                
+                return (
+                  <div key={task.instruction_index} className="p-2 bg-white rounded border">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Step {task.instruction_index + 1}: {currentAI.description}</span>
+                      <span className="text-gray-500">{formatDuration(currentAI.duration)}</span>
+                    </div>
+                    {currentAI.attention && (
+                      <div className="mt-1 text-warning-700 text-xs flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        Manual attention required
+                      </div>
+                    )}
+                    {remainingTime > 0 && (
+                      <div className="mt-1 text-sm text-gray-600">
+                        Time remaining: <span className="font-mono font-bold">{formatTime(remainingTime)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
-          
-          {remainingTime > 0 && (
-            <div className="text-sm">
-              <span className="font-medium">Time Remaining:</span>
-              <div className="mt-1 font-mono text-lg font-bold">
-                {formatTime(remainingTime)}
-              </div>
-            </div>
-          )}
         </div>
       )}
       

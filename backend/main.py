@@ -158,10 +158,10 @@ def mark_done(payload: DonePayload):
         print("[DEBUG] mark_done API: session updated successfully")
         _current_session = new_session
         return asdict(_current_session)
-    except KeyError as e:
-        print(f"[DEBUG] mark_done API: KeyError - {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    # except KeyError as e:
+    #     print(f"[DEBUG] mark_done API: KeyError - {e}")
+    #     raise HTTPException(status_code=400, detail=str(e))
+    except ImportError as e:
         print(f"[DEBUG] mark_done API: Exception - {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -294,7 +294,7 @@ def add_chef_to_session(payload: AddChefPayload):
     global _current_session
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
-    
+
     try:
         new_session = add_chef(_current_session, payload.chef_name, payload.timestamp_seconds)
         _current_session = new_session
@@ -309,7 +309,7 @@ def remove_chef_from_session(payload: RemoveChefPayload):
     global _current_session
     if _current_session is None:
         raise HTTPException(status_code=404, detail="No active session")
-    
+
     try:
         new_session = remove_chef(_current_session, payload.chef_name, payload.timestamp_seconds)
         _current_session = new_session

@@ -1,6 +1,8 @@
 { pkgs ? import <nixpkgs> {} }:
 pkgs.mkShell rec {
   buildInputs = [
+    pkgs.chromium
+    pkgs.chromedriver
     pkgs.zlib
     #pkgs.nodejs_22
     #pkgs.nodePackages.npm
