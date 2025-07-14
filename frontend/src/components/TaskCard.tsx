@@ -17,6 +17,8 @@ interface TaskCardProps {
   chefName?: string;
   onMarkDone?: (instructionIndex: number) => void;
   currentTime: number;
+  flash?: boolean;
+  urgentMessage?: string;
 }
 
 export const TaskCard: React.FC<TaskCardProps> = ({
@@ -24,7 +26,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   instructionIndex,
   chefName,
   onMarkDone,
-  currentTime
+  currentTime,
+  flash = false,
+  urgentMessage,
 }) => {
   const instruction = session.recipe[instructionIndex];
   const isCompleted = isTaskCompleted(session, instructionIndex);
@@ -69,7 +73,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   };
   
   const getCardClasses = () => {
-    let baseClasses = 'task-card';
+    let baseClasses = 'task-card-modern';
     if (isCompleted) return `${baseClasses} task-completed`;
     if (isActive) return `${baseClasses} task-active`;
     if (needsAttention) return `${baseClasses} task-attention`;
@@ -77,7 +81,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   };
   
   return (
-    <div className={getCardClasses()}>
+    <div className={getCardClasses() + (flash ? ' animate-blink border-4 border-red-500' : '')}>
+      {flash && urgentMessage && (
+        <div className="mb-2 text-center text-red-700 font-bold animate-blink">
+          {urgentMessage}
+        </div>
+      )}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           {getStatusIcon()}

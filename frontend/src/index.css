@@ -49,3 +49,21 @@
 .animate-blink {
   animation: blink 1s steps(2, start) infinite;
 } 
+
+.task-card-modern {
+  @apply bg-white rounded-2xl shadow-lg border border-gray-100 p-8 mb-4 transition-all duration-200 font-sans;
+  box-shadow: 0 4px 24px 0 rgba(0,0,0,0.08), 0 1.5px 6px 0 rgba(0,0,0,0.04);
+}
+.task-card-modern:hover, .task-card-modern.task-active {
+  @apply shadow-2xl border-primary-300;
+  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.12), 0 3px 12px 0 rgba(0,0,0,0.06);
+}
+
+/* Carousel navigation arrows */
+.embla-arrow {
+  @apply bg-white bg-opacity-90 rounded-full shadow-lg p-3 hover:bg-opacity-100 transition border border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-400;
+  box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+}
+.embla-arrow:disabled {
+  @apply opacity-50 cursor-not-allowed;
+} 

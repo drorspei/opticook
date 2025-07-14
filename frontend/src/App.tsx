@@ -1,16 +1,21 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, RotateCcw, ChefHat, Clock } from 'lucide-react';
+import useEmblaCarousel from 'embla-carousel-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Session, ActiveTask } from './types';
 import { api, ApiError } from './api';
 import { SessionSetup } from './components/SessionSetup';
 import { AddRecipe } from './components/AddRecipe';
 import { TaskCard } from './components/TaskCard';
 import { ChefStatusPanel } from './components/ChefStatusPanel';
+import { ChefTaskCarousel } from './components/ChefTaskCarousel';
 import { 
   getTotalRecipeTime, 
   getCompletedRecipeTime, 
   formatDuration,
-  formatTime
+  formatTime,
+  getCurrentAI,
+  getRemainingTime
 } from './utils';
 
 function App() {
@@ -53,22 +58,13 @@ function App() {
     }
   }, [session, currentTime]);
   
-  const markTaskDone = async (instructionIndex: number) => {
+  const markTaskDone = async (chefName: string, instructionIndex: number) => {
     if (!session) return;
     
     setLoading(true);
     try {
-      // Find which chef is working on this task
-      const activeChef = Object.entries(session.cooking_map).find(([_, tasks]) => 
-        (tasks as Record<number, ActiveTask>)[instructionIndex] !== undefined
-      )?.[0];
-      
-      if (!activeChef) {
-        throw new Error('No chef found for this task');
-      }
-      
       const updatedSession = await api.markDone({
-        chef: activeChef,
+        chef: chefName,
         instruction_index: instructionIndex,
         timestamp_seconds: currentTime
       });
@@ -182,6 +178,90 @@ function App() {
     loadSessionState();
   }, []);
   
+  // Embla Carousel setup
+  const [emblaRef, emblaApi] = useEmblaCarousel({
+    loop: false,
+    skipSnaps: false
+  });
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Add state to track which instruction index should flash
+  const [flashIndex, setFlashIndex] = useState<number | null>(null);
+  const [urgentMessage, setUrgentMessage] = useState<string | null>(null);
+
+  // Build a list of active instruction indices (for any chef)
+  const activeInstructionIndices = React.useMemo(() => {
+    const indices = new Set<number>();
+    if (session) {
+      Object.values(session.cooking_map).forEach(tasks => {
+        Object.keys(tasks).forEach(idx => indices.add(Number(idx)));
+      });
+    }
+    return Array.from(indices).sort((a, b) => a - b);
+  }, [session]);
+
+  // Embla: update selected index on slide change
+  useEffect(() => {
+    if (!emblaApi) return;
+    const onSelect = () => setSelectedIndex(emblaApi.selectedScrollSnap());
+    emblaApi.on('select', onSelect);
+    onSelect();
+    return () => {
+      emblaApi.off('select', onSelect);
+    };
+  }, [emblaApi]);
+
+  // Embla: keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!emblaApi) return;
+      if (e.key === 'ArrowLeft') emblaApi.scrollPrev();
+      if (e.key === 'ArrowRight') emblaApi.scrollNext();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [emblaApi]);
+  
+  // Auto-advance and flash logic
+  useEffect(() => {
+    if (!session || !emblaApi) return;
+    // Find the first non-attention active task whose timer just ran out
+    const now = currentTime;
+    let found = false;
+    for (const chefTasks of Object.values(session.cooking_map)) {
+      for (const [idxStr, activeTask] of Object.entries(chefTasks)) {
+        const idx = Number(idxStr);
+        const currentAI = getCurrentAI(session, activeTask.instruction_index, activeTask.ai_index);
+        const isNonAttention = currentAI && !currentAI.attention;
+        const remaining = getRemainingTime(session, activeTask, now);
+        if (isNonAttention && remaining === 0) {
+          // Auto-advance carousel if not already on this card
+          if (activeInstructionIndices[selectedIndex] !== idx) {
+            const targetIdx = activeInstructionIndices.indexOf(idx);
+            if (targetIdx !== -1) {
+              emblaApi.scrollTo(targetIdx);
+              setFlashIndex(idx);
+              setUrgentMessage('Time to attend the task!');
+              found = true;
+              break;
+            }
+          } else {
+            setFlashIndex(idx);
+            setUrgentMessage('Time to attend the task!');
+            found = true;
+            break;
+          }
+        }
+      }
+      if (found) break;
+    }
+    if (!found) {
+      setFlashIndex(null);
+      setUrgentMessage(null);
+    }
+    // eslint-disable-next-line
+  }, [session, currentTime, emblaApi, activeInstructionIndices, selectedIndex]);
+  
   if (!session) {
     if (showAddRecipe) {
       return (
@@ -289,35 +369,19 @@ function App() {
               onRemoveChef={removeChef}
             />
           </div>
-          
           {/* Tasks */}
           <div className="lg:col-span-2">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Cooking Tasks</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(() => {
-                // Build a list of active instruction indices (for any chef)
-                const activeInstructionIndices = new Set<number>();
-                Object.values(session.cooking_map).forEach(tasks => {
-                  Object.keys(tasks).forEach(idx => activeInstructionIndices.add(Number(idx)));
-                });
-                // Active tasks first, then the rest in recipe order
-                const activeTasks = session.recipe
-                  .map((_, idx) => idx)
-                  .filter(idx => activeInstructionIndices.has(idx));
-                const otherTasks = session.recipe
-                  .map((_, idx) => idx)
-                  .filter(idx => !activeInstructionIndices.has(idx));
-                const orderedIndices = [...activeTasks, ...otherTasks];
-                return orderedIndices.map(instructionIndex => (
-                  <TaskCard
-                    key={instructionIndex}
-                    session={session}
-                    instructionIndex={instructionIndex}
-                    onMarkDone={markTaskDone}
-                    currentTime={currentTime}
-                  />
-                ));
-              })()}
+            <div className="space-y-8">
+              {Object.keys(session.chefs_data).map((chefName) => (
+                <ChefTaskCarousel
+                  key={chefName}
+                  session={session}
+                  chefName={chefName}
+                  currentTime={currentTime}
+                  onMarkDone={markTaskDone}
+                />
+              ))}
             </div>
           </div>
         </div>
