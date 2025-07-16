@@ -100,7 +100,12 @@ export const ChefTaskCarousel: React.FC<ChefTaskCarouselProps> = ({
 
   return (
     <div className="mb-8">
-      <h3 className="text-lg font-semibold mb-2">{chefName}</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-lg font-semibold">{chefName}</h3>
+        <span className="text-sm text-gray-600">
+          {selectedIndex + 1} / {activeInstructionIndices.length} tasks
+        </span>
+      </div>
       <div className="relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex">
