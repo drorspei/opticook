@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from dataclasses import asdict
 from typing import List, Dict, Optional, Tuple
@@ -326,3 +327,5 @@ def recipe_from_url(payload: RecipeFromUrlPayload = Body(...)):
     if not result:
         return {"success": False, "error": "Failed to retrieve or process recipe. See server logs for details."}
     return {"success": True, "recipe": result}
+
+app.mount("/", StaticFiles(directory="../frontend/build", html=True), name="static")

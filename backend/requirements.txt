@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+pydantic
+selenium
+beautifulsoup4
+litellm
+python-dotenv
