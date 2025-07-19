@@ -1,3 +1,4 @@
+import traceback
 import time
 import json
 import os
@@ -95,71 +96,66 @@ You are given a recipe in JSON-LD format extracted from a web page.\nYour task i
             return False
         # Filter ci_list to only those where all ai have attention == false
         ci_no_attention = []
-        for ci in ci_list:
+        for i, ci in enumerate(ci_list):
             if all(ai.get('attention') == False for ai in ci.get('ai', [])):
-                ci_no_attention.append(ci)
+                ci_no_attention.append((i, ci))
         print(f"[DEBUG] Passing {len(ci_no_attention)} ci with no attention to Phase 2 LLM")
-        # --- Phase 2: LLM breakdown of ai steps, all at once ---
-        if ci_no_attention:
-            phase2_prompt = (
-                "Given the following list of ci (CookingInstruction) objects, where all ai (AtomicInstruction) steps have attention == false, "
-                "break each ai into three parts: (1) a short initialization ai, (2) the main non-attention ai, and (3) a short finalizing ai. "
-                "Return ONLY a valid JSON list of ci objects, each with the same structure, with no explanation, comments, or extra text. "
-                "The output must be valid JSON, suitable for parsing with Python's json.loads(). "
-                "Do not include any trailing commas. Make sure all brackets and braces are closed. "
-                "Double-check that every { has a matching } and every [ has a matching ]. If you are unsure, reformat the output to be valid JSON.\n\n"
-                "Format:\n"
-                "[\n  {\n    \"ai\": [ ... ],\n    \"dependencies\": [ ... ]\n  }, ... ]\n\n"
-                f"ci list:\n{json.dumps(ci_no_attention, indent=2)}\n"
-            )
-            print(f"[DEBUG] Phase 2: Calling LLM for all {len(ci_no_attention)} ci at once")
-            try:
-                phase2_response = litellm.completion(
-                    model=llm_model,
-                    messages=[{"role": "user", "content": phase2_prompt}],
-                    max_tokens=2048,
-                    temperature=0.2,
-                    **({"api_key": api_key} if api_key else {})
-                )
-                ai_json = phase2_response["choices"][0]["message"]["content"]
-                print(f"[DEBUG] LLM raw output (Phase 2, all ci): {ai_json!r}")
-                # Try to extract JSON from code block if present
-                match = re.search(r"```json\\s*(.*?)```", ai_json, re.DOTALL)
-                if match:
-                    ai_json = match.group(1)
-                else:
-                    # Try to extract the first JSON array in the string
-                    start = ai_json.find('[')
-                    end = ai_json.rfind(']')
-                    if start != -1 and end != -1 and end > start:
-                        ai_json = ai_json[start:end+1]
-                def clean_json_string(s):
-                    s = re.sub(r',\s*([}\]])', r'\1', s)
-                    return s.strip()
-                ai_json_clean = clean_json_string(ai_json)
-                def auto_close_json(s):
-                    open_braces = s.count('{')
-                    close_braces = s.count('}')
-                    if open_braces > close_braces:
-                        print(f"[WARN] Auto-closing JSON for all ci: adding {open_braces - close_braces} '}}'")
-                    s += '}' * (open_braces - close_braces)
-                    return s
-                ai_json_closed = auto_close_json(ai_json_clean)
+
+        for i, ci in enumerate(ci_list):
+            pos = 0
+            ais = ci.get("ai", [])
+            while pos < len(ais):
+                ai = ais[pos]
+                pos += 1
+                if ai.get('attention', True):
+                    continue
+
+
+                # --- Phase 2: LLM breakdown of ai steps, all at once ---
+                # We want to break each non-attention ai step into 3 parts: init with attention, main w/o attention, short final with attenion
+
+                prompt = f'''Given the following cooking instruction, which mostly doesn't require the chef's attention (e.g. "bake for 40 minutes"), break it down into two steps:
+    a short initialization step with a single verb (e.g. place in the the oven), and a main part that requires no attention that uses a passive verb (e.g. let it bake for 40 minutes).
+    Use the object of the original sentence in both steps.
+    Reply with a JSON object with the two fields "initialization", "main".
+    Here is the sentence:
+
+    {ai}'''
                 try:
-                    phase2_results = json.loads(ai_json_closed)
-                    print(f"[DEBUG] Successfully parsed JSON for all ci in Phase 2")
-                except Exception as e:
-                    print(f"[ERROR] JSON parsing failed for all ci: {e}\n[DEBUG] Cleaned+Closed JSON string: {ai_json_closed!r}")
-                    phase2_results = []
-            except Exception as e:
-                print(f"[ERROR] LLM Phase 2 failed for all ci: {e}")
-                phase2_results = []
-        else:
-            phase2_results = []
-        # phase2_results is the list of processed ci objects
-        ai_list = phase2_results if phase2_results else ci_list
+                    resp = litellm.completion(
+                        model=llm_model,
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=2048,
+                        temperature=0.2,
+                        **({"api_key": api_key} if api_key else {})
+                    )
+                    j = json.loads(resp.choices[0].message.content.replace("```json", "```").split("```", 1)[-1].split("```", 1)[0])
+                    init, main = j['initialization'], j['main']
+                except Exception:
+                    # print stack
+                    print(f"[DEBUG] Error occurred while processing AI step {ai}")
+                    print(traceback.format_exc())
+                    continue
+
+                ais[pos-1:pos] = [
+                    {
+                        "duration_seconds": 30,
+                        "attention": True,
+                        "description": init
+                    },
+                    {
+                        "duration_seconds": ai.get("duration_seconds"),
+                        "attention": False,
+                        "description": main
+                    },
+                ]
+                pos += 1
+
+
+        # # phase2_results is the list of processed ci objects
+        # ai_list = phase2_results if phase2_results else ci_list
         print("[DEBUG] Successfully retrieved and processed recipe.")
-        return ai_list
+        return ci_list
     except Exception as e:
         print(f"[ERROR] Unexpected error in retrieve_recipe_from_url: {e}")
         return False
