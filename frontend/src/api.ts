@@ -112,19 +112,13 @@ export const api = {
   },
 
   // Delete a recipe
-  async deleteRecipe(recipeId: string): Promise<{ message: string }> {
+  async deleteRecipe(recipeId: string): Promise<void> {
     const response = await fetch(`/api/v1/recipes/${recipeId}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
     });
-
     if (!response.ok) {
       throw new ApiError(response.status, `API request failed: ${response.statusText}`);
     }
-
-    return response.json();
   },
 
   // Add a chef to the current session
