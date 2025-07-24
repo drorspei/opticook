@@ -80,7 +80,7 @@ Then decompose the main cooking steps as a list of \"ci\" (CookingInstruction)
 objects.\nEach \"ci\" is a dictionary with three fields:\n
 
 (1) An "index" field (with counting indices 0,1,2,...)\n
-(2) A list called "aiList" consisting smaller tasks called \"ai\" (AtomicInstruction) steps, each is a 
+(2) A list called "aiList" consisting of at most four smaller tasks called \"ai\" (AtomicInstruction) steps, each is a 
 dicrionary with fields: 
   (2.1) "description" (short, clear, imperative),
   (2.2) "duration_seconds" (estimate in seconds), 
